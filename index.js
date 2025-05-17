@@ -414,6 +414,213 @@ app.post("/api/appointments", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// Update an existing appointment
+app.put("/api/appointments/:id", authenticateToken, async (req, res) => {
+  try {
+    const appointmentId = req.params.id;
+    const {
+      title,
+      description,
+      start_time,
+      end_time,
+      location,
+      participants,
+      status,
+    } = req.body;
+
+    // Check if appointment exists and belongs to user
+    const checkResult = await pool.query(
+      "SELECT * FROM appointments WHERE id = $1 AND user_id = $2",
+      [appointmentId, req.user.id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Appointment not found or unauthorized" });
+    }
+
+    // Process participants data to ensure it's an array of objects
+    let participantsJson = null;
+
+    if (participants) {
+      // Always ensure participants is an array of objects with email property
+      let participantsArray;
+
+      // Check if it's already an array
+      if (Array.isArray(participants)) {
+        // Convert any string elements to objects with email property
+        participantsArray = participants.map((item) => {
+          if (typeof item === "string") {
+            return { email: item };
+          } else if (typeof item === "object" && item.email) {
+            // If it's already an object with email, only keep the email field
+            return { email: item.email };
+          } else {
+            // Fallback for unexpected formats
+            return { email: String(item) };
+          }
+        });
+      }
+      // If it's a string (comma-separated emails)
+      else if (typeof participants === "string") {
+        // Convert comma-separated string to array of objects with email property
+        participantsArray = participants
+          .split(",")
+          .map((email) => email.trim())
+          .filter((email) => email.length > 0)
+          .map((email) => ({ email }));
+      } else {
+        // Handle case where it might be a single object or something else
+        participantsArray = [
+          {
+            email: participants.toString(),
+          },
+        ];
+      }
+
+      participantsJson = JSON.stringify(participantsArray);
+      console.log("Processed participants for update:", participantsJson);
+    }
+
+    // Build update query dynamically based on provided fields
+    let updateFields = [];
+    let queryParams = [appointmentId, req.user.id];
+    let paramCounter = 3; // Starting from 3 since $1 and $2 are already used
+
+    if (title) {
+      updateFields.push(`title = $${paramCounter++}`);
+      queryParams.push(title);
+    }
+
+    if (description !== undefined) {
+      updateFields.push(`description = $${paramCounter++}`);
+      queryParams.push(description);
+    }
+
+    if (start_time) {
+      updateFields.push(`start_time = $${paramCounter++}`);
+      queryParams.push(start_time);
+    }
+
+    if (end_time) {
+      updateFields.push(`end_time = $${paramCounter++}`);
+      queryParams.push(end_time);
+    }
+
+    if (location !== undefined) {
+      updateFields.push(`location = $${paramCounter++}`);
+      queryParams.push(location);
+    }
+
+    if (participants !== undefined) {
+      updateFields.push(`participants = $${paramCounter++}`);
+      queryParams.push(participantsJson);
+    }
+
+    if (status) {
+      updateFields.push(`status = $${paramCounter++}`);
+      queryParams.push(status);
+    }
+
+    // If no fields to update, return the original appointment
+    if (updateFields.length === 0) {
+      return res.json(checkResult.rows[0]);
+    }
+
+    // Perform update
+    const query = `
+      UPDATE appointments
+      SET ${updateFields.join(", ")}
+      WHERE id = $1 AND user_id = $2
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Update appointment error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Delete an appointment
+app.delete("/api/appointments/:id", authenticateToken, async (req, res) => {
+  try {
+    const appointmentId = req.params.id;
+
+    // Check if appointment exists and belongs to user
+    const checkResult = await pool.query(
+      "SELECT * FROM appointments WHERE id = $1 AND user_id = $2",
+      [appointmentId, req.user.id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Appointment not found or unauthorized" });
+    }
+
+    // Delete appointment
+    await pool.query(
+      "DELETE FROM appointments WHERE id = $1 AND user_id = $2",
+      [appointmentId, req.user.id]
+    );
+
+    res.json({ message: "Appointment deleted successfully" });
+  } catch (error) {
+    console.error("Delete appointment error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Update user profile
+app.put("/api/auth/profile", authenticateToken, async (req, res) => {
+  try {
+    const { name, timezone } = req.body;
+
+    // Build update query based on provided fields
+    let updateFields = [];
+    let queryParams = [req.user.id];
+    let paramCounter = 2; // Starting from 2 since $1 is already used
+
+    if (name) {
+      updateFields.push(`name = $${paramCounter++}`);
+      queryParams.push(name);
+    }
+
+    if (timezone) {
+      updateFields.push(`timezone = $${paramCounter++}`);
+      queryParams.push(timezone);
+    }
+
+    // If no fields to update, return error
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: "No fields to update" });
+    }
+
+    // Perform update
+    const query = `
+      UPDATE users
+      SET ${updateFields.join(", ")}
+      WHERE id = $1
+      RETURNING id, name, email, timezone
+    `;
+
+    const result = await pool.query(query, queryParams);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 
 
