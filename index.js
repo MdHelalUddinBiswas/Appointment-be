@@ -638,13 +638,21 @@ app.get("/api/calendars", authenticateToken, async (req, res) => {
 });
 
 // Create a Google Meet link
-// Import routes
+// Import routes - Temporarily commented out until supporting files are created
+/* 
 const integrationRoutes = require("./routes/integration.routes");
 const meetingRoutes = require("./routes/meeting.routes");
 
 // Apply integration and meeting routes
 app.use("/api/integration", integrationRoutes);
 app.use("/api/meetings", meetingRoutes);
+*/
+
+// TODO: Implement these services before uncommenting:
+// - services/integration.service.js
+// - services/meeting.service.js
+// - config/oauth.config.js
+// - models/integration.models.js
 
 
 app.listen(port, async () => {
