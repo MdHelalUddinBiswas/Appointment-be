@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const bcrypt = require('bcryptjs');
+const bcrypt = require("bcryptjs");
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
@@ -227,7 +227,6 @@ app.post("/api/auth/login", async (req, res) => {
     res.status(500).json({ message: "Server error during login" });
   }
 });
-
 
 // Get user profile
 app.get("/api/auth/me", authenticateToken, async (req, res) => {
@@ -621,7 +620,6 @@ app.put("/api/auth/profile", authenticateToken, async (req, res) => {
   }
 });
 
-
 // Get user's calendars
 app.get("/api/calendars", authenticateToken, async (req, res) => {
   try {
@@ -639,21 +637,19 @@ app.get("/api/calendars", authenticateToken, async (req, res) => {
 
 // Create a Google Meet link
 // Import routes - Temporarily commented out until supporting files are created
-/* 
+
 const integrationRoutes = require("./routes/integration.routes");
 const meetingRoutes = require("./routes/meeting.routes");
 
 // Apply integration and meeting routes
 app.use("/api/integration", integrationRoutes);
 app.use("/api/meetings", meetingRoutes);
-*/
 
 // TODO: Implement these services before uncommenting:
 // - services/integration.service.js
 // - services/meeting.service.js
 // - config/oauth.config.js
 // - models/integration.models.js
-
 
 app.listen(port, async () => {
   console.log(`MeetNing Appointment AI API running on port ${port}`);
