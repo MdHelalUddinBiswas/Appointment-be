@@ -620,6 +620,13 @@ app.put("/api/auth/profile", authenticateToken, async (req, res) => {
   }
 });
 
+// Import Prisma service
+const prisma = require('./services/prisma.service');
+
+// Use Prisma-based routes
+const appointmentsPrismaRoutes = require('./routes/appointments.prisma');
+app.use('/api/appointments-prisma', appointmentsPrismaRoutes);
+
 // Get user's calendars
 app.get("/api/calendars", authenticateToken, async (req, res) => {
   try {
