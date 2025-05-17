@@ -228,6 +228,195 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+
+// Get user profile
+app.get("/api/auth/me", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name, email, timezone FROM users WHERE id = $1",
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Profile error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all appointments for a user
+app.get("/api/appointments", authenticateToken, async (req, res) => {
+  try {
+    const status = req.query.status; // Filter by status if provided
+
+    let query = "SELECT * FROM appointments WHERE user_id = $1";
+    const queryParams = [req.user.id];
+
+    if (status) {
+      query += " AND status = $2";
+      queryParams.push(status);
+    }
+
+    query += " ORDER BY start_time ASC";
+
+    const result = await pool.query(query, queryParams);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Get appointments error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get appointment by ID
+app.get("/api/appointments/:id", authenticateToken, async (req, res) => {
+  try {
+    const appointmentId = req.params.id;
+
+    const result = await pool.query(
+      "SELECT * FROM appointments WHERE id = $1 AND user_id = $2",
+      [appointmentId, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Get appointment error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create a new appointment
+app.post("/api/appointments", authenticateToken, async (req, res) => {
+  try {
+    // Get user ID from the authenticated token instead of request body
+    const user_id = req.user.id;
+    const email = req.user.email || "user@example.com";
+    const name = req.user.name || "User";
+
+    const {
+      title,
+      description,
+      start_time,
+      end_time,
+      location,
+      participants,
+      status,
+    } = req.body;
+
+    // Validate request
+    if (!title || !start_time || !end_time) {
+      return res
+        .status(400)
+        .json({ message: "Please provide title, start_time, and end_time" });
+    }
+
+    // Process participants data
+    let participantsJson = null;
+
+    if (participants) {
+      // Always ensure participants is an array of objects with email property
+      let participantsArray;
+
+      // Check if it's already an array
+      if (Array.isArray(participants)) {
+        // Convert any string elements to objects with email property
+        participantsArray = participants.map((item) => {
+          if (typeof item === "string") {
+            return { email: item };
+          } else if (typeof item === "object" && item.email) {
+            // If it's already an object with email, only keep the email field
+            return { email: item.email };
+          } else {
+            // Fallback for unexpected formats
+            return { email: String(item) };
+          }
+        });
+      }
+      // If it's a string (comma-separated emails)
+      else if (typeof participants === "string") {
+        // Convert comma-separated string to array of objects with email property
+        participantsArray = participants
+          .split(",")
+          .map((email) => email.trim())
+          .filter((email) => email.length > 0)
+          .map((email) => ({ email }));
+      } else {
+        // Handle case where it might be a single object or something else
+        participantsArray = [
+          {
+            email: participants.toString(),
+          },
+        ];
+      }
+
+      participantsJson = JSON.stringify(participantsArray);
+    }
+
+    console.log("Processed participants:", participantsJson);
+
+    // Check if user exists in the database
+    const userCheck = await pool.query("SELECT id FROM users WHERE id = $1", [
+      user_id,
+    ]);
+
+    // If user doesn't exist, create a default user record
+    if (userCheck.rows.length === 0) {
+      console.log(
+        `User ${user_id} doesn't exist in database. Creating default user record.`
+      );
+
+      // Generate a secure hashed password for the default user
+      const defaultPassword = await bcrypt.hash("defaultPassword123", 10);
+
+      // Insert a basic user record to satisfy the foreign key constraint with all required fields
+      await pool.query(
+        "INSERT INTO users (id, email, name, password, created_at) VALUES ($1, $2, $3, $4, NOW())",
+        [user_id, email, name, defaultPassword]
+      );
+    }
+
+    const result = await pool.query(
+      `INSERT INTO appointments
+        (user_id, title, description, start_time, end_time, location, participants, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        user_id, // Using authenticated user_id instead of request body id
+        title,
+        description,
+        start_time,
+        end_time,
+        location,
+        participantsJson,
+        status || "upcoming",
+      ]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Create appointment error:", error);
+    // Provide more helpful error message based on error type
+    if (error.code === "23503") {
+      // Foreign key violation
+      return res.status(400).json({
+        message:
+          "User doesn't exist in the database. Please try again or contact support.",
+      });
+    }
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
 app.listen(port, async () => {
   console.log(`MeetNing Appointment AI API running on port ${port}`);
   await initDatabase();
