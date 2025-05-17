@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const bcrypt = require('bcryptjs');
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
@@ -149,10 +150,11 @@ app.post("/api/auth/signup", async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
+    // Hash password with bcryptjs
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create new user
+    // Create new user with hashed password
     const result = await pool.query(
       "INSERT INTO users (name, email, password, timezone) VALUES ($1, $2, $3, $4) RETURNING id, name, email, timezone",
       [name, email, hashedPassword, timezone || "UTC"]
@@ -184,6 +186,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
 // Login user
 app.post("/api/auth/login", async (req, res) => {
+  console.log(req.body);
   try {
     const { email, password } = req.body;
 
@@ -197,7 +200,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    // Compare password
+    // Compare password using bcryptjs
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials" });
