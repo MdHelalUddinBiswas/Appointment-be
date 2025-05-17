@@ -37,6 +37,99 @@ try {
   console.error("Database connection test failed:", error.message);
 }
 
+// Initialize database tables
+async function initDatabase() {
+  try {
+    // Create users table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password VARCHAR(100) NOT NULL,
+        timezone VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create appointments table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        title VARCHAR(200) NOT NULL,
+        description TEXT,
+        start_time TIMESTAMP NOT NULL,
+        end_time TIMESTAMP NOT NULL,
+        location TEXT,
+        participants JSONB,
+        status VARCHAR(20) DEFAULT 'upcoming',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create calendars table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS calendars (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        provider VARCHAR(50) NOT NULL,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_expiry TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log("Database tables initialized successfully");
+  } catch (error) {
+    console.error("Database initialization error:", error);
+  }
+}
+
+// Auth Middleware
+const authenticateToken = (req, res, next) => {
+  // Get token from header - support multiple formats
+  let token = req.header("x-auth-token");
+
+  // Also check for Authorization header with Bearer token
+  const authHeader = req.header("Authorization");
+  if (!token && authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.split(" ")[1];
+    console.log("Using bearer token:", token.substring(0, 10) + "...");
+  }
+
+  if (!token) {
+    return res.status(401).json({ message: "No token, authorization denied" });
+  }
+
+  try {
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "your_jwt_secret"
+    );
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: "Token is not valid" });
+  }
+};
+
+// Test route for checking deployment status
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "MeetNing Appointment AI API is running",
+    environment: process.env.NODE_ENV || "development",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+
+
+
 app.get("/api", (req, res) => {
   res.json({ message: "Welcome to the MeetNing Appointment AI API" });
 });
@@ -46,6 +139,9 @@ app.get("/", (req, res) => {
   res.send("MeetNing Appointment AI API is running");
 });
 
-app.listen(port, () => {
+
+
+app.listen(port, async () => {
   console.log(`MeetNing Appointment AI API running on port ${port}`);
+  await initDatabase();
 });
