@@ -622,6 +622,29 @@ app.put("/api/auth/profile", authenticateToken, async (req, res) => {
 });
 
 
+// Get user's calendars
+app.get("/api/calendars", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name, provider, description FROM calendars WHERE user_id = $1",
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Get calendars error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Create a Google Meet link
+// Import routes
+const integrationRoutes = require("./routes/integration.routes");
+const meetingRoutes = require("./routes/meeting.routes");
+
+// Apply integration and meeting routes
+app.use("/api/integration", integrationRoutes);
+app.use("/api/meetings", meetingRoutes);
 
 
 app.listen(port, async () => {
