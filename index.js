@@ -8,7 +8,13 @@ require("dotenv").config();
 const app = express();
 const port = 8000;
 
-app.use(cors());
+// Configure CORS to allow requests from frontend (development and production)
+app.use(cors({
+  origin: ['http://localhost:3000', 'https://meetning.vercel.app'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
+  credentials: true
+}));
 app.use(express.json());
 
 // PostgreSQL connection setup
@@ -636,14 +642,15 @@ app.get("/api/calendars", authenticateToken, async (req, res) => {
 });
 
 // Create a Google Meet link
-// Import routes - Temporarily commented out until supporting files are created
-
+// Import routes
 const integrationRoutes = require("./routes/integration.routes");
 const meetingRoutes = require("./routes/meeting.routes");
+const conflictCheckerRoutes = require("./routes/conflict-checker");
 
-// Apply integration and meeting routes
+// The appointments API routes are defined directly in this file (not in a separate module)
 app.use("/api/integration", integrationRoutes);
 app.use("/api/meetings", meetingRoutes);
+app.use("/api/conflicts", conflictCheckerRoutes); // Register conflict checker routes
 
 // TODO: Implement these services before uncommenting:
 // - services/integration.service.js
