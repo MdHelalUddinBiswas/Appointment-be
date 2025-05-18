@@ -10,7 +10,7 @@ const port = 8000;
 
 // Configure CORS to allow requests from frontend (development and production)
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://meetning.vercel.app'],
+  origin: ['http://localhost:3000', 'https://meet-ning-appointment-fe.vercel.app'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
   credentials: true
