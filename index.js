@@ -994,7 +994,7 @@ app.delete("/api/appointments/:id", authenticateToken, async (req, res) => {
 });
 
 // Update user profile
-app.put("/api/auth/profile", authenticateToken, async (req, res) => {
+app.put("/api/auth/update-profile", authenticateToken, async (req, res) => {
   try {
     const { name, timezone } = req.body;
 
@@ -1035,6 +1035,25 @@ app.put("/api/auth/profile", authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error("Update profile error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Delete user
+app.delete("/api/auth/delete", async (req, res) => {
+  console.log("Delete request body:", req.body);
+  try {
+    const { userId } = req.body;
+
+    console.log("Deleting appointments for user:", userId);
+    await pool.query("DELETE FROM appointments WHERE user_id = $1", [userId]);
+
+    console.log("Deleting user:", userId);
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]);
+
+    res.json({ message: "User deleted successfully" });
+  } catch (error) {
+    console.error("Delete user error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
