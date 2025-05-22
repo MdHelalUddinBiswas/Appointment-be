@@ -666,45 +666,157 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
   }
 });
 
-// Get all appointments for a user
+// Get all appointments for a user (both created by user and where user is a participant)
 app.get("/api/appointments", authenticateToken, async (req, res) => {
   try {
     const status = req.query.status; // Filter by status if provided
+    const userId = req.user.id;
+    const userEmail = req.user.email;
 
-    let query = "SELECT * FROM appointments WHERE user_id = $1";
-    const queryParams = [req.user.id];
+    // First query: Get appointments created by the user
+    let createdQuery = "SELECT * FROM appointments WHERE user_id = $1";
+    const createdParams = [userId];
 
     if (status) {
-      query += " AND status = $2";
-      queryParams.push(status);
+      createdQuery += " AND status = $2";
+      createdParams.push(status);
     }
 
-    query += " ORDER BY start_time ASC";
+    const createdResult = await pool.query(
+      createdQuery + " ORDER BY start_time ASC",
+      createdParams
+    );
 
-    const result = await pool.query(query, queryParams);
+    // Second query: Get appointments where user is a participant
+    // Note: participants is stored as JSONB, so we need to use JSONB operators
+    let participantQuery =
+      "SELECT * FROM appointments WHERE participants::jsonb @> $1::jsonb";
+    const participantParams = [JSON.stringify([{ email: userEmail }])];
 
-    res.json(result.rows);
+    // Alternatively, if participants might be stored in different formats, we could use a more flexible approach
+    // let participantQuery = "SELECT * FROM appointments WHERE participants::text ILIKE $1";
+    // const participantParams = [`%${userEmail}%`];
+
+    if (status) {
+      participantQuery += " AND status = $2";
+      participantParams.push(status);
+    }
+
+    const participantResult = await pool.query(
+      participantQuery + " ORDER BY start_time ASC",
+      participantParams
+    );
+
+    // Combine results, avoiding duplicates
+    const allAppointments = [...createdResult.rows];
+
+    // Mark appointments with role (owner or participant)
+    createdResult.rows.forEach((appointment) => {
+      appointment.role = "owner";
+    });
+
+    // Add participant appointments, avoiding duplicates
+    participantResult.rows.forEach((appointment) => {
+      // Add role field
+      appointment.role = "participant";
+
+      // Only add if not already in the array (in case user is both owner and participant)
+      if (!allAppointments.some((app) => app.id === appointment.id)) {
+        allAppointments.push(appointment);
+      }
+    });
+
+    // Sort by start_time
+    allAppointments.sort(
+      (a, b) => new Date(a.start_time) - new Date(b.start_time)
+    );
+
+    console.log("Fetched appointments:", {
+      created: createdResult.rows.length,
+      participant: participantResult.rows.length,
+      total: allAppointments.length,
+    });
+    console.log("Fetched appointments:", allAppointments);
+    res.json(allAppointments);
   } catch (error) {
     console.error("Get appointments error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
 
+// // Get appointment by ID
+// app.get("/api/appointments/:id", authenticateToken, async (req, res) => {
+//   try {
+//     const appointmentId = req.params.id;
+
+//     // Only filter by appointment ID since this endpoint is public
+//     const result = await pool.query(
+//       "SELECT * FROM appointments WHERE id = $1",
+//       [appointmentId]
+//     );
+
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ message: "Appointment not found" });
+//     }
+
+//     res.json(result.rows[0]);
+//   } catch (error) {
+//     console.error("Get appointment error:", error);
+//     res.status(500).json({ message: "Server error" });
+//   }
+// });
+
+
 // Get appointment by ID
 app.get("/api/appointments/:id", authenticateToken, async (req, res) => {
   try {
     const appointmentId = req.params.id;
+    const userId = req.user.id; // Get the authenticated user's ID
 
+    // First, get the appointment
     const result = await pool.query(
-      "SELECT * FROM appointments WHERE id = $1 AND user_id = $2",
-      [appointmentId, req.user.id]
+      "SELECT * FROM appointments WHERE id = $1",
+      [appointmentId]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "Appointment not found" });
     }
 
-    res.json(result.rows[0]);
+    const appointment = result.rows[0];
+    
+    // Check if the user is the owner
+    if (appointment.user_id === userId) {
+      appointment.role = 'owner';
+    } 
+    // If not owner, check if they are a participant
+    else if (appointment.participants) {
+      try {
+        const participants = Array.isArray(appointment.participants) 
+          ? appointment.participants 
+          : JSON.parse(appointment.participants);
+          
+        const participantEmails = participants.map(p => 
+          typeof p === 'string' ? p : p.email
+        );
+        
+        // Check if user's email is in participants
+        if (participantEmails.includes(req.user.email)) {
+          appointment.role = 'participant';
+        }
+      } catch (e) {
+        console.error("Error parsing participants:", e);
+      }
+    }
+
+    // If no role was set, the user doesn't have access
+    if (!appointment.role) {
+      return res.status(403).json({ 
+        message: "You don't have permission to view this appointment" 
+      });
+    }
+
+    res.json(appointment);
   } catch (error) {
     console.error("Get appointment error:", error);
     res.status(500).json({ message: "Server error" });
