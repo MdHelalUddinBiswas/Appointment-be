@@ -8,6 +8,8 @@
     "build": "npm install"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.44",
+    "@langchain/openai": "^0.5.11",
     "@prisma/client": "^6.8.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",

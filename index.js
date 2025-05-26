@@ -4,7 +4,16 @@ const bcrypt = require("bcryptjs");
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
+const { ChatOpenAI } = require("@langchain/openai");
+const { OpenAIEmbeddings } = require("@langchain/openai");
+const { PGVectorStore } = require("@langchain/community/vectorstores/pgvector");
+const { PromptTemplate } = require("@langchain/core/prompts");
+const {
+  RunnableSequence,
+  RunnablePassthrough,
+} = require("@langchain/core/runnables");
 
+const { StringOutputParser } = require("@langchain/core/output_parsers");
 const app = express();
 const port = 8000;
 
@@ -49,6 +58,117 @@ try {
 } catch (error) {
   console.error("Database connection test failed:", error.message);
 }
+
+/**
+ * Helper function to safely get environment variables
+ * @param {string} key - Environment variable key
+ * @param {string} defaultValue - Default value if not found
+ * @returns {string} Environment variable value or default
+ */
+function getEnvVariable(key, defaultValue = "") {
+  const value = process.env[key];
+  if (!value && defaultValue === "") {
+    console.warn(`Warning: Environment variable ${key} is not set`);
+  }
+  return value || defaultValue;
+}
+
+// Comment out the OpenAI integration code until we have all required dependencies
+
+const OPENAI_API_KEY = getEnvVariable("OPENAI_API_KEY");
+
+// Initialize OpenAI embeddings
+const embeddings = new OpenAIEmbeddings({
+  openAIApiKey: OPENAI_API_KEY,
+  modelName: "text-embedding-ada-002",
+  batchSize: 512,
+  stripNewLines: true,
+});
+
+// Helper function to create vector store
+async function getVectorStore(config, embeddings) {
+  return await PGVectorStore.initialize(embeddings, {
+    postgresConnectionOptions: {
+      connectionString: config.connectionString,
+    },
+    tableName: config.tableName || "embeddings",
+    columns: {
+      idColumnName: "id",
+      vectorColumnName: "embedding",
+      contentColumnName: "content",
+      metadataColumnName: "metadata",
+    },
+  });
+}
+
+// Initialize vector store - using async IIFE to allow await
+let pgvectorStore;
+(async () => {
+  try {
+    pgvectorStore = await getVectorStore(
+      {
+        connectionString:
+          process.env.DATABASE_URL ||
+          "postgresql://postgres:postgres@localhost:5432/meetning",
+        tableName: "embeddings",
+      },
+      embeddings
+    );
+    console.log("Vector store initialized successfully");
+  } catch (error) {
+    console.error("Error initializing vector store:", error);
+    // Create a mock vector store for fallback
+    pgvectorStore = {
+      similaritySearch: async () => [],
+      addDocuments: async () =>
+        console.log("Mock vector store: addDocuments called"),
+    };
+  }
+})();
+
+const template = `You are a helpful assistant for the MeetNing Appointment AI system. Using ONLY the following context, answer the question about appointments, schedules, and meetings. Format your response in a clear and organized way. Include all relevant details about appointments that match the query.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer: `;
+
+const prompt = PromptTemplate.fromTemplate(template);
+const model = new ChatOpenAI({
+  modelName: "gpt-3.5-turbo",
+  openAIApiKey: OPENAI_API_KEY,
+  temperature: 0.7,
+});
+const outputParser = new StringOutputParser();
+
+const chain = RunnableSequence.from([
+  {
+    context: async (input) => {
+      const docs = await pgvectorStore.similaritySearch(input, 4);
+      console.log("Search input:", input);
+      console.log("Found documents:", docs.length);
+
+      return docs
+        .map(
+          (doc) =>
+            `[Appointment: ${doc.metadata.title || "Untitled"}] ${
+              doc.pageContent
+            } - Start: ${doc.metadata.start_time || "Unknown"} - End: ${
+              doc.metadata.end_time || "Unknown"
+            } - Status: ${doc.metadata.status || "Unknown"} - Participants: ${
+              doc.metadata.participants_count || "0"
+            }`
+        )
+        .join("\n");
+    },
+    question: new RunnablePassthrough(),
+  },
+  prompt,
+  model,
+  outputParser,
+]);
 
 // Initialize database tables
 async function initDatabase() {
@@ -482,6 +602,308 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+// Endpoint to add appointment data to vector store
+
+app.post("/api/embeddings/add-appointments", async (req, res) => {
+  try {
+    // Check if vector store is initialized
+    if (!pgvectorStore) {
+      return res.status(503).json({
+        error:
+          "AI service is still initializing. Please try again in a moment.",
+      });
+    }
+
+    const appointments = req.body;
+    
+    if (!Array.isArray(appointments) && !appointments.userId) {
+      return res.status(400).json({ error: "Invalid request format. Expected an array of appointments or an object with userId." });
+    }
+
+    // If a single appointment is sent (not in an array)
+    const appointmentsArray = Array.isArray(appointments) ? appointments : [appointments];
+    
+    // Process and embed appointment data
+    const documents = appointmentsArray.map(appointment => {
+      // Calculate participants count
+      let participantsCount = 0;
+      if (appointment.participants && Array.isArray(appointment.participants)) {
+        participantsCount = appointment.participants.length;
+      }
+      
+      // Format dates for content
+      const formattedStartTime = new Date(appointment.start_time).toLocaleString();
+      const formattedEndTime = new Date(appointment.end_time).toLocaleString();
+      
+      // Create document content
+      const content =
+        `Appointment: ${appointment.title}. ` +
+        `Description: ${appointment.description || "No description"}. ` +
+        `This appointment is scheduled for ${formattedStartTime} to ${formattedEndTime}. ` +
+        `Location: ${appointment.location || "No location specified"}. ` +
+        `Status: ${appointment.status || "scheduled"}. ` +
+        `This appointment has ${participantsCount} participants.`;
+      
+      // Return document object
+      return {
+        pageContent: content,
+        metadata: {
+          id: appointment.id,
+          title: appointment.title,
+          start_time: formattedStartTime,
+          end_time: formattedEndTime,
+          status: appointment.status || "scheduled",
+          participants_count: participantsCount,
+          participants: appointment.participants,
+          user_id: appointment.userId,
+        },
+      };
+    });
+
+    // Add documents to vector store
+    console.log(`Adding ${documents.length} appointments to vector store`);
+    await pgvectorStore.addDocuments(documents);
+
+    res.json({
+      message: `Successfully embedded ${documents.length} appointments`,
+      count: documents.length,
+    });
+  } catch (error) {
+    console.error("Error embedding appointments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// get embeddings data
+app.get("/api/embeddings/appointments", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const query = {
+      text: "SELECT * FROM embeddings WHERE metadata->>'user_id' = $1",
+      values: [userId],
+    };
+    const embeddingsResult = await pool.query(query);
+
+    // Process the embeddings data for frontend use
+    const formattedEmbeddings = embeddingsResult.rows.map((row) => {
+      // Extract metadata for easier access
+      const metadata = row.metadata || {};
+
+      return {
+        id: row.id,
+        title: metadata.title || "Untitled",
+        description: metadata.description || "",
+        content: row.content,
+
+        // Time information
+        start_time: metadata.start_time,
+        end_time: metadata.end_time,
+        duration_minutes: metadata.duration_minutes,
+        day_of_week: metadata.day_of_week,
+        time_of_day: metadata.time_of_day,
+        is_past: metadata.is_past || false,
+
+        // Location and status
+        location: metadata.location || "",
+        status: metadata.status || "unknown",
+
+        // Participants
+        participants_count: metadata.participants_count || 0,
+
+        // Additional metadata
+        has_description: metadata.has_description || false,
+        has_location: metadata.has_location || false,
+        is_recurring: metadata.is_recurring || false,
+
+        // Include raw metadata for reference
+        raw_metadata: metadata,
+      };
+    });
+
+    res.json({
+      success: true,
+      count: formattedEmbeddings.length,
+      data: formattedEmbeddings,
+    });
+  } catch (error) {
+    console.error("Error fetching embeddings:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Get appointment by ID from embeddings
+app.get("/api/appointments/:id", authenticateToken, async (req, res) => {
+    console.log("User requesting appointment:", req.user);
+    try {
+      const userId = req.user.id;
+      const appointmentId = req.params.id;
+
+      // Input validation
+      if (!appointmentId) {
+        return res.status(400).json({
+          success: false,
+          error: "Appointment ID is required",
+        });
+      }
+      
+      console.log("Looking for appointment with ID:", appointmentId);
+      
+      // Simpler query: Just get the appointment by its ID in the embeddings table
+      // This is the most direct approach
+      const query = {
+        text: `SELECT * FROM embeddings WHERE id = $1 LIMIT 1`,
+        values: [appointmentId],
+      };
+      
+      console.log("Executing query:", query.text);
+      const result = await pool.query(query);
+      console.log("Query result count:", result.rows.length);
+      
+      if (result.rows.length === 0) {        
+        return res.status(404).json({
+          success: false,
+          message: "Appointment not found or you don't have permission to view it",
+        });
+      }
+
+      // Format the response data
+      const embedding = result.rows[0];
+      const metadata = embedding.metadata || {};
+      
+      console.log("Found embedding:", embedding.id);
+      console.log("Metadata:", metadata);
+      
+      // Map the embedding data to the expected appointment format
+      const response = {
+        success: true,
+        data: {
+          id: embedding.id,
+          title: metadata.title || "Untitled",
+          description: metadata.description || "",
+          start_time: metadata.start_time,
+          end_time: metadata.end_time,
+          location: metadata.location || "",
+          status: metadata.status || "scheduled",
+          participants: metadata.participants || [],
+          participants_count: metadata.participants_count || 0,
+          user_id: metadata.user_id,
+          content: embedding.content,
+          raw_metadata: metadata, // Include the full metadata for client-side access
+        },
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error("Error fetching appointment:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch appointment details",
+        details:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
+    }
+  }
+);
+
+// delete embeddings data
+app.delete(
+  "/api/embeddings/appointments",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const query = {
+        text: "DELETE FROM embeddings WHERE metadata->>'user_id' = $1",
+        values: [userId],
+      };
+      await pool.query(query);
+      res.json({ message: "Embeddings deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting embeddings:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// edit embeddings data
+app.put("/api/embeddings/appointments", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const {
+      id,
+      title,
+      description,
+      start_time,
+      end_time,
+      location,
+      participants,
+      status,
+    } = req.body;
+    const query = {
+      text: "UPDATE embeddings SET title = $2, description = $3, start_time = $4, end_time = $5, location = $6, participants = $7, status = $8 WHERE metadata->>'user_id' = $1",
+      values: [
+        userId,
+        title,
+        description,
+        start_time,
+        end_time,
+        location,
+        participants,
+        status,
+      ],
+    };
+    await pool.query(query);
+    res.json({ message: "Embeddings updated successfully" });
+  } catch (error) {
+    console.error("Error updating embeddings:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Chat endpoint
+app.post("/api/chat", authenticateToken, async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    // Check if vector store is initialized
+    if (!pgvectorStore) {
+      return res.status(503).json({
+        error:
+          "AI service is still initializing. Please try again in a moment.",
+      });
+    }
+
+    // First check if we have any documents
+    const docs = await pgvectorStore.similaritySearch(message, 5);
+    if (!docs || docs.length === 0) {
+      return res.json({
+        response:
+          "I don't have any information about your appointments yet. Please add your appointment data first using the /api/embeddings/add-appointments endpoint.",
+        hasDocuments: false,
+      });
+    }
+
+    const result = await chain.invoke(message);
+    // Format response for better readability
+    const formattedResult = result.trim();
+
+    res.json({
+      response: formattedResult,
+      hasDocuments: true,
+    });
+  } catch (error) {
+    console.error("Chat error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Verify OTP endpoint
 app.post("/api/auth/verify-otp", async (req, res) => {
   try {
@@ -765,63 +1187,6 @@ app.get("/api/appointments", authenticateToken, async (req, res) => {
 //     res.status(500).json({ message: "Server error" });
 //   }
 // });
-
-
-// Get appointment by ID
-app.get("/api/appointments/:id", authenticateToken, async (req, res) => {
-  try {
-    const appointmentId = req.params.id;
-    const userId = req.user.id; // Get the authenticated user's ID
-
-    // First, get the appointment
-    const result = await pool.query(
-      "SELECT * FROM appointments WHERE id = $1",
-      [appointmentId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Appointment not found" });
-    }
-
-    const appointment = result.rows[0];
-    
-    // Check if the user is the owner
-    if (appointment.user_id === userId) {
-      appointment.role = 'owner';
-    } 
-    // If not owner, check if they are a participant
-    else if (appointment.participants) {
-      try {
-        const participants = Array.isArray(appointment.participants) 
-          ? appointment.participants 
-          : JSON.parse(appointment.participants);
-          
-        const participantEmails = participants.map(p => 
-          typeof p === 'string' ? p : p.email
-        );
-        
-        // Check if user's email is in participants
-        if (participantEmails.includes(req.user.email)) {
-          appointment.role = 'participant';
-        }
-      } catch (e) {
-        console.error("Error parsing participants:", e);
-      }
-    }
-
-    // If no role was set, the user doesn't have access
-    if (!appointment.role) {
-      return res.status(403).json({ 
-        message: "You don't have permission to view this appointment" 
-      });
-    }
-
-    res.json(appointment);
-  } catch (error) {
-    console.error("Get appointment error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
 // Create a new appointment
 app.post("/api/appointments", authenticateToken, async (req, res) => {
