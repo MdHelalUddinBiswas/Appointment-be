@@ -7,14 +7,14 @@ const { authenticateToken } = require('../middleware/auth.middleware');
 router.use(authenticateToken);
 
 // Embeddings routes
-router.post('/add-appointments', embeddingsController.addAppointments);
-router.get('/appointments', embeddingsController.getAppointments);
+router.post('/embeddings/add-appointments', embeddingsController.addAppointments);
+router.get('/embeddings/appointments', embeddingsController.getAppointments);
 router.get('/appointments/:id', embeddingsController.getAppointmentById);
-router.delete('/appointments', embeddingsController.deleteAllAppointments);
-router.delete('/appointments/:id', embeddingsController.deleteAppointmentById);
-router.put('/appointments/:id', embeddingsController.updateAppointment);
-router.put('/appointments/:id/complete', embeddingsController.markAppointmentAsCompleted);
-router.put('/appointments/:id/cancel', embeddingsController.cancelAppointment);
-router.post('/appointments/:id/participants', embeddingsController.addParticipant);
+router.delete('/embeddings/appointments', embeddingsController.deleteAllAppointments);
+router.delete('/embeddings/appointments/:id', embeddingsController.deleteAppointmentById);
+router.put('/embeddings/appointments/:id', embeddingsController.updateAppointment);
+router.put('/embeddings/appointments/:id/complete', embeddingsController.markAppointmentAsCompleted);
+router.put('/embeddings/appointments/:id/cancel', embeddingsController.cancelAppointment);
+router.post('/embeddings/appointments/:id/participants', embeddingsController.addParticipant);
 
 module.exports = router;

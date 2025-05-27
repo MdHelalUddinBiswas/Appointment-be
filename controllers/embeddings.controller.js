@@ -280,10 +280,6 @@ const getAppointmentById = async (req, res) => {
       }
     }
 
-    console.log("Original participants:", metadata.participants);
-    console.log("Formatted participants:", formattedParticipants);
-
-    // Determine if the current user is the owner or a participant
     let role = "viewer";
 
     // Check if user is owner
@@ -294,7 +290,7 @@ const getAppointmentById = async (req, res) => {
     else if (formattedParticipants.some((p) => p.email === req.user.email)) {
       role = "participant";
     }
-
+ 
     console.log(`User role for appointment ${appointmentId}: ${role}`);
 
     // Map the embedding data to the expected appointment format

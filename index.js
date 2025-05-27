@@ -55,7 +55,7 @@ app.get("/api/health", (req, res) => {
 
 // Apply routes
 app.use("/api/auth", authRoutes);
-app.use("/api/embeddings", embeddingsRoutes);
+app.use("/api", embeddingsRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/integration", integrationRoutes);
 app.use("/api/meetings", meetingRoutes);
