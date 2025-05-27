@@ -33,6 +33,7 @@ const chatRoutes = require('./routes/chat.routes');
 const integrationRoutes = require('./routes/integration.routes');
 const meetingRoutes = require('./routes/meeting.routes');
 const conflictCheckerRoutes = require('./routes/conflict-checker');
+const availabilityRoutes = require('./routes/availability.routes');
 
 // Basic routes
 app.get("/", (req, res) => {
