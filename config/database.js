@@ -61,9 +61,27 @@ const initDatabase = async () => {
         location TEXT,
         participants JSONB,
         status VARCHAR(20) DEFAULT 'upcoming',
+        reminder_sent BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Add reminder_sent column if it doesn't exist (for existing tables)
+    try {
+      // Check if the column exists
+      const columnCheck = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'appointments' AND column_name = 'reminder_sent'
+      `);
+      
+      // If column doesn't exist, add it
+      if (columnCheck.rows.length === 0) {
+        await pool.query(`ALTER TABLE appointments ADD COLUMN reminder_sent BOOLEAN DEFAULT FALSE`);
+        console.log('Added reminder_sent column to appointments table');
+      }
+    } catch (err) {
+      console.error('Error checking/adding reminder_sent column:', err);
+    }
 
     // Create calendars table if not exists
     await pool.query(`

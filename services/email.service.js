@@ -230,7 +230,94 @@ const sendPasswordResetEmail = async (email, resetUrl, name) => {
   }
 };
 
+/**
+ * Send appointment reminder email
+ * @param {string} recipientEmail - Recipient's email address
+ * @param {string} appointmentTitle - Title of the appointment
+ * @param {string} appointmentTime - Formatted appointment time
+ * @param {string} location - Appointment location
+ * @param {string} description - Appointment description
+ * @param {string} organizerName - Name of the appointment organizer
+ * @param {Array<string>} bccRecipients - Optional list of BCC recipients
+ */
+const sendAppointmentReminderEmail = async (recipientEmail, appointmentTitle, appointmentTime, location, description, organizerName, bccRecipients = []) => {
+  try {
+    // Check if email credentials are configured
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      console.warn("Email credentials not configured. Appointment reminder email not sent.");
+      return;
+    }
+
+    const transporter = createTransporter();
+    if (!transporter) {
+      return; // Exit if transporter creation fails
+    }
+
+    // Create email content
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #4a5568;">Appointment Reminder: ${appointmentTitle}</h2>
+        <p>Hello,</p>
+        <p>This is a friendly reminder that you have an upcoming appointment:</p>
+        
+        <div style="background-color: #f7fafc; border-left: 4px solid #4f46e5; padding: 15px; margin: 20px 0;">
+          <p><strong>Appointment:</strong> ${appointmentTitle}</p>
+          <p><strong>Time:</strong> ${appointmentTime} (in 15 minutes)</p>
+          <p><strong>Location:</strong> ${location}</p>
+          ${description ? `<p><strong>Description:</strong> ${description}</p>` : ''}
+          ${organizerName ? `<p><strong>Organized by:</strong> ${organizerName}</p>` : ''}
+        </div>
+        
+        <p>Please make sure you're prepared for this meeting.</p>
+        <p>Thanks,<br>The MeetNing Team</p>
+      </div>
+    `;
+
+    const textContent = `
+      Appointment Reminder: ${appointmentTitle}
+      
+      Hello,
+      
+      This is a friendly reminder that you have an upcoming appointment:
+      
+      Appointment: ${appointmentTitle}
+      Time: ${appointmentTime} (in 15 minutes)
+      Location: ${location}
+      ${description ? `Description: ${description}` : ''}
+      ${organizerName ? `Organized by: ${organizerName}` : ''}
+      
+      Please make sure you're prepared for this meeting.
+      
+      Thanks,
+      The MeetNing Team
+    `;
+
+    // Send email using Nodemailer
+    const mailOptions = {
+      from: `"MeetNing" <${process.env.EMAIL_USER}>`,
+      to: recipientEmail.toLowerCase(),
+      subject: `Reminder: ${appointmentTitle} in 15 minutes`,
+      html: htmlContent,
+      text: textContent,
+    };
+    
+    // Add BCC recipients if provided
+    if (bccRecipients && bccRecipients.length > 0) {
+      mailOptions.bcc = bccRecipients.map(email => email.toLowerCase()).join(',');
+    }
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Appointment reminder email sent: ${info.messageId}`);
+    return info;
+  } catch (error) {
+    console.error("Error sending appointment reminder email:", error);
+    // Don't throw the error, just log it to prevent disrupting the reminder service
+    return null;
+  }
+};
+
 module.exports = {
   sendOTPEmail,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  sendAppointmentReminderEmail
 };

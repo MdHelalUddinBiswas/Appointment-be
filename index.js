@@ -5,6 +5,7 @@ require("dotenv").config();
 // Import configuration
 const { initDatabase, testConnection } = require('./config/database');
 const { initializeVectorStore } = require('./services/vectorStore.service');
+const { scheduleAppointmentReminders } = require('./services/reminder.service');
 
 // Create Express app
 const app = express();
@@ -76,6 +77,9 @@ const startServer = async () => {
     
     // Initialize vector store
     await initializeVectorStore();
+    
+    // Initialize appointment reminder service
+    await scheduleAppointmentReminders();
     
     // Start server
     app.listen(port, () => {
