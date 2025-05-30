@@ -4,12 +4,9 @@ const cron = require("node-cron");
 
 // Track processed appointments to avoid duplicates
 const processedAppointments = new Set();
-const sentReminderIds = new Set();
-const lastReminderTimestamps = {};
 
 // Constants for reminder timing
 const REMINDER_INTERVAL = 15; // minutes before appointment to send reminder
-const REMINDER_COOLDOWN = 15 * 60 * 1000; // 15 minutes in milliseconds
 
 /**
  * Initialize the appointment reminder scheduler
@@ -22,8 +19,6 @@ const scheduleAppointmentReminders = async () => {
     // Clear any previously tracked appointments when server restarts
     processedAppointments.clear();
 
-    // Schedule to run every minute to check for upcoming appointments
-    // Use '*/5 * * * *' to check every 5 minutes if you prefer less frequent checks
     cron.schedule("* * * * *", async () => {
       try {
         await checkUpcomingAppointments();
@@ -76,38 +71,11 @@ const checkUpcomingAppointments = async () => {
     console.log(`Target reminder timestamp: ${targetTime.toISOString()}`);
     console.log("--------------------------------------------------");
 
-    // Query to find all upcoming appointments that need reminders
-    // We use a simplified, precise query focused just on finding appointments
-    const query = {
-      text: `
-        SELECT 
-          e.id, 
-          e.metadata->>'title' as title, 
-          e.metadata->>'start_time' as start_time,
-          e.metadata->>'participants' as participants_json,
-          e.metadata->>'reminder_sent' as reminder_sent
-        FROM 
-          embeddings e
-        WHERE 
-          e.content LIKE '%appointment%'
-          AND e.metadata IS NOT NULL 
-          AND e.metadata ? 'start_time'
-          AND e.metadata->>'reminder_sent' = 'false'
-      `,
-    };
-
-    console.log("Fetching appointments that need reminders...");
-
-    // Execute the query
-    const result = await pool.query(query);
-
     // Also run a direct query to find the specific appointment we're looking for (for debugging)
     console.log(
       "Running additional debug query to check all upcoming appointments..."
     );
-    // Query to find all upcoming appointments with full details for debugging
 
-    // Define startIso as the current time in ISO format for filtering upcoming appointments
     const startIso = now.toISOString();
 
     const debugQuery = {
@@ -140,11 +108,6 @@ const checkUpcomingAppointments = async () => {
     if (debugResult.rows.length > 0) {
       console.log("\n------ UPCOMING APPOINTMENTS IN DATABASE ------");
       for (const appt of debugResult.rows) {
-        console.log("\nAppointment details:");
-        console.log(`Title: "${appt.title}"`);
-        console.log(`Raw start_time from DB: ${appt.start_time}`);
-
-        // Parse and display time in multiple formats for debugging
         try {
           const apptTime = new Date(appt.start_time);
           const formattedTime = apptTime.toLocaleTimeString("en-US", {
@@ -161,9 +124,6 @@ const checkUpcomingAppointments = async () => {
           console.log(`Parsed appointment time: ${apptTime.toString()}`);
           console.log(`Formatted time: ${formattedTime}`);
           console.log(`ISO string: ${apptTime.toISOString()}`);
-          console.log(`Minutes until start: ${minutesToStart}`);
-          console.log(`Current server time: ${now.toString()}`);
-          console.log(`Server time ISO: ${now.toISOString()}`);
 
           const needsReminder =
             minutesToStart > 0 &&
