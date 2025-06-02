@@ -43,32 +43,19 @@ const checkUpcomingAppointments = async () => {
   try {
     const now = new Date();
 
-    // Format time for logging
-    const currentTimeFormatted = now.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
-
+    // Use ISO time for logging to avoid timezone issues
+    const currentTimeIso = now.toISOString();
+    
     const targetTime = new Date(now.getTime() + REMINDER_INTERVAL * 60 * 1000);
-
-    // Convert to date only strings for debugging
-    const targetTimeFormatted = targetTime.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
+    const targetTimeIso = targetTime.toISOString();
 
     // Log clear headers for debugging
     console.log("\n==================================================");
-    console.log(`🔔 APPOINTMENT REMINDER CHECK - ${currentTimeFormatted}`);
+    console.log(`🔔 APPOINTMENT REMINDER CHECK`);
     console.log("==================================================");
-    console.log(`Current time: ${currentTimeFormatted}`);
-    console.log(
-      `Looking for appointments at: ${targetTimeFormatted} (${REMINDER_INTERVAL} min from now)`
-    );
-    console.log(`Current server timestamp: ${now.toISOString()}`);
-    console.log(`Target reminder timestamp: ${targetTime.toISOString()}`);
+    console.log(`Current time (ISO): ${currentTimeIso}`);
+    console.log(`Looking for appointments exactly ${REMINDER_INTERVAL} minutes before start time`);
+    console.log(`Target reminder timestamp: ${targetTimeIso}`);
     console.log("--------------------------------------------------");
 
     // Also run a direct query to find the specific appointment we're looking for (for debugging)
@@ -110,24 +97,24 @@ const checkUpcomingAppointments = async () => {
       for (const appt of debugResult.rows) {
         try {
           const apptTime = new Date(appt.start_time);
-          const formattedTime = apptTime.toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-          });
+          // Use ISO format for consistency across timezones
+          const apptTimeIso = apptTime.toISOString();
+          
+          // For display in email, format using UTC to avoid timezone confusion
+          const formattedTime = apptTime.toUTCString();
 
-          // Calculate minutes until start in different ways
+          // Calculate minutes until start in a timezone-neutral way
           const minutesToStart = Math.round(
             (apptTime.getTime() - now.getTime()) / (60 * 1000)
           );
 
-          console.log(`Parsed appointment time: ${apptTime.toString()}`);
-          console.log(`Formatted time: ${formattedTime}`);
-          console.log(`ISO string: ${apptTime.toISOString()}`);
+          console.log(`Appointment time (ISO): ${apptTime.toISOString()}`);
+          console.log(`Current time (ISO): ${now.toISOString()}`);
+          console.log(`Minutes until start: ${minutesToStart}`);
 
+          // Send reminder exactly at 15 minutes before start
           const needsReminder =
-            minutesToStart > 0 &&
-            minutesToStart <= 30 &&
+            minutesToStart === REMINDER_INTERVAL &&
             (appt.reminder_sent === null || appt.reminder_sent === "false");
 
           console.log(
@@ -138,7 +125,7 @@ const checkUpcomingAppointments = async () => {
             })`
           );
 
-          if (needsReminder && minutesToStart == 15) {
+          if (needsReminder) {
             try {
               // Parse participants if available
               let participantEmails = [];
