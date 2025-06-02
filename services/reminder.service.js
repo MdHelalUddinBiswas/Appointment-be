@@ -100,8 +100,13 @@ const checkUpcomingAppointments = async () => {
           // Use ISO format for consistency across timezones
           const apptTimeIso = apptTime.toISOString();
           
-          // For display in email, format using UTC to avoid timezone confusion
-          const formattedTime = apptTime.toUTCString();
+          // Format time in a universal format without locale or timezone
+          const day = apptTime.getDate().toString().padStart(2, '0');
+          const month = (apptTime.getMonth() + 1).toString().padStart(2, '0');
+          const year = apptTime.getFullYear();
+          const hours = apptTime.getHours().toString().padStart(2, '0');
+          const minutes = apptTime.getMinutes().toString().padStart(2, '0');
+          const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}`;
 
           // Calculate minutes until start in a timezone-neutral way
           const minutesToStart = Math.round(

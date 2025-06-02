@@ -1,9 +1,12 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const { pool } = require('../config/database');
-const { sendOTPEmail, sendPasswordResetEmail } = require('../services/email.service');
-require('dotenv').config();
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const { pool } = require("../config/database");
+const {
+  sendOTPEmail,
+  sendPasswordResetEmail,
+} = require("../services/email.service");
+require("dotenv").config();
 
 // Store pending users in memory temporarily
 const pendingUsers = new Map();
@@ -522,5 +525,5 @@ module.exports = {
   deleteUser,
   forgotPassword,
   resetPassword,
-  updateSchemaForResetPassword
+  updateSchemaForResetPassword,
 };
