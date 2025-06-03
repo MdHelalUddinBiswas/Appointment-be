@@ -60,13 +60,13 @@ const addAppointments = async (req, res) => {
         participantsCount = formattedParticipants.length;
       }
 
-      // Format dates for content
-      const formattedStartTime = new Date(
-        appointment.start_time
-      ).toLocaleString();
-      const formattedEndTime = new Date(
-        appointment.end_time
-      ).toLocaleString();
+      // Store original ISO format dates
+      const isoStartTime = appointment.start_time;
+      const isoEndTime = appointment.end_time;
+      
+      // Format dates for human-readable content
+      const formattedStartTime = new Date(appointment.start_time).toLocaleString();
+      const formattedEndTime = new Date(appointment.end_time).toLocaleString();
 
       // Create document content
       const content =
@@ -90,8 +90,8 @@ const addAppointments = async (req, res) => {
         metadata: {
           id: appointment.id,
           title: appointment.title,
-          start_time: formattedStartTime,
-          end_time: formattedEndTime,
+          start_time: isoStartTime,  // Use ISO format for database storage
+          end_time: isoEndTime,      // Use ISO format for database storage
           status: appointment.status || "scheduled",
           participants_count: participantsCount,
           participants: formattedParticipants,
