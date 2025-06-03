@@ -108,7 +108,49 @@ const checkUpcomingAppointments = async () => {
           const minutes = apptTime.getMinutes().toString().padStart(2, '0');
           const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}`;
 
-          // Calculate minutes until start in a timezone-neutral way
+          // Get user's timezone if available, otherwise default to UTC
+          let userTimezone = 'UTC';
+          let participantEmail = '';
+          
+          // Check if owner_email exists to get timezone
+          if (appt.owner_email) {
+            participantEmail = appt.owner_email;
+            // Query the database to get the user's timezone
+            try {
+              const userQuery = {
+                text: `SELECT timezone FROM users WHERE email = $1`,
+                values: [participantEmail]
+              };
+              const userResult = await pool.query(userQuery);
+              if (userResult.rows.length > 0 && userResult.rows[0].timezone) {
+                userTimezone = userResult.rows[0].timezone;
+                console.log(`Found user timezone: ${userTimezone} for ${participantEmail}`);
+              }
+            } catch (tzError) {
+              console.error(`Error getting user timezone: ${tzError.message}`);
+            }
+          }
+          
+          // Format the appointment time in the user's timezone
+          let formattedTimeInUserTz = formattedTime;
+          try {
+            // Only adjust if we found a valid timezone
+            if (userTimezone !== 'UTC') {
+              const tzTime = new Date(apptTime.toLocaleString('en-US', { timeZone: userTimezone }));
+              const tzDay = tzTime.getDate().toString().padStart(2, '0');
+              const tzMonth = (tzTime.getMonth() + 1).toString().padStart(2, '0');
+              const tzYear = tzTime.getFullYear();
+              const tzHours = tzTime.getHours().toString().padStart(2, '0');
+              const tzMinutes = tzTime.getMinutes().toString().padStart(2, '0');
+              formattedTimeInUserTz = `${tzYear}-${tzMonth}-${tzDay} ${tzHours}:${tzMinutes}`;
+              console.log(`Time in user timezone (${userTimezone}): ${formattedTimeInUserTz}`);
+            }
+          } catch (tzFormatError) {
+            console.error(`Error formatting time in user timezone: ${tzFormatError.message}`);
+          }
+          
+          // Calculate minutes until start based on the current time
+          // We still use UTC for calculations to ensure consistency
           const minutesToStart = Math.round(
             (apptTime.getTime() - now.getTime()) / (60 * 1000)
           );
@@ -179,11 +221,15 @@ const checkUpcomingAppointments = async () => {
 
               // If we found a valid recipient email
               if (recipientEmail && recipientEmail.includes("@")) {
-                console.log(`Sending debug reminder to: ${recipientEmail}`);
+                console.log(`Sending reminder to: ${recipientEmail}`);
+                // Use the timezone-specific time format if available
+                const timeToDisplay = formattedTimeInUserTz || formattedTime;
+                console.log(`Using time format in email: ${timeToDisplay} (timezone: ${userTimezone})`);
+                
                 const result = await sendAppointmentReminderEmail(
                   recipientEmail,
                   appt.title,
-                  formattedTime,
+                  timeToDisplay,
                   appt.location || "No location specified",
                   appt.description || "No description provided",
                   appt.owner_name || "MeetNing",
@@ -192,11 +238,11 @@ const checkUpcomingAppointments = async () => {
                 console.log("Email send result:", result);
               } else {
                 console.log(
-                  "⚠️ No valid recipient email found for debug reminder"
+                  "⚠️ No valid recipient email found for reminder"
                 );
               }
             } catch (emailError) {
-              console.error("Error sending debug reminder email:", emailError);
+              console.error("Error sending reminder email:", emailError);
             }
           }
         } catch (timeError) {
@@ -212,10 +258,7 @@ const checkUpcomingAppointments = async () => {
   }
 };
 
-/**
- * Send reminder for a specific appointment
- * @param {Object} appointment - Appointment data
- */
+// Note: sendAppointmentReminderEmail is imported from email.service.js at the top of this file
 
 module.exports = {
   scheduleAppointmentReminders,
