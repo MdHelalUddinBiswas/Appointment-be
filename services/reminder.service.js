@@ -5,22 +5,8 @@ const cron = require("node-cron");
 // Track processed appointments to avoid duplicates
 const processedAppointments = new Set();
 
-// Helper function to format date to YYYY-MM-DD hh:mm AM/PM
-const formatTo12Hour = (dateObj) => {
-  const year = dateObj.getFullYear();
-  const month = (dateObj.getMonth() + 1).toString().padStart(2, "0");
-  const day = dateObj.getDate().toString().padStart(2, "0");
-  let hours = dateObj.getHours();
-  const minutes = dateObj.getMinutes().toString().padStart(2, "0");
-  const ampm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12;
-  hours = hours ? hours : 12; // the hour '0' should be '12'
-  const strHours = hours.toString().padStart(2, "0");
-  return `${year}-${month}-${day} ${strHours}:${minutes} ${ampm}`;
-};
-
 // Constants for reminder timing
-const REMINDER_INTERVAL = 15;
+const REMINDER_INTERVAL = 15; 
 
 /**
  * Initialize the appointment reminder scheduler
@@ -90,6 +76,7 @@ const checkUpcomingAppointments = async () => {
           e.metadata->>'end_time' as end_time, 
           e.metadata->>'reminder_sent' as reminder_sent,
           e.metadata->>'location' as location,
+          e.metadata->>'description' as description,
           e.metadata->>'owner_email' as owner_email,
           e.metadata->>'owner_name' as owner_name,
           e.metadata->>'participants' as participants,
@@ -115,8 +102,13 @@ const checkUpcomingAppointments = async () => {
           // Use ISO format for consistency across timezones
           const apptTimeIso = apptTime.toISOString();
 
-          // Format time in a universal format (UTC) using 12-hour AM/PM
-          const formattedTime = formatTo12Hour(apptTime);
+          // Format time in a universal format without locale or timezone
+          const day = apptTime.getDate().toString().padStart(2, "0");
+          const month = (apptTime.getMonth() + 1).toString().padStart(2, "0");
+          const year = apptTime.getFullYear();
+          const hours = apptTime.getHours().toString().padStart(2, "0");
+          const minutes = apptTime.getMinutes().toString().padStart(2, "0");
+          const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}`;
 
           // Get user's timezone if available, otherwise default to UTC
           let userTimezone = "UTC";
@@ -146,27 +138,19 @@ const checkUpcomingAppointments = async () => {
           // Format the appointment time in the user's timezone
           let formattedTimeInUserTz = formattedTime;
           try {
+            // Only adjust if we found a valid timezone
             if (userTimezone !== "UTC") {
-              const formatter = new Intl.DateTimeFormat("en-US", {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-                timeZone: userTimezone,
-              });
-              const parts = formatter
-                .formatToParts(apptTime)
-                .reduce((acc, part) => {
-                  acc[part.type] = part.value;
-                  return acc;
-                }, {});
-
-              formattedTimeInUserTz = `${parts.year}-${parts.month}-${
-                parts.day
-              } ${parts.hour}:${parts.minute} ${parts.dayPeriod.toUpperCase()}`;
-
+              const tzTime = new Date(
+                apptTime.toLocaleString("en-US", { timeZone: userTimezone })
+              );
+              const tzDay = tzTime.getDate().toString().padStart(2, "0");
+              const tzMonth = (tzTime.getMonth() + 1)
+                .toString()
+                .padStart(2, "0");
+              const tzYear = tzTime.getFullYear();
+              const tzHours = tzTime.getHours().toString().padStart(2, "0");
+              const tzMinutes = tzTime.getMinutes().toString().padStart(2, "0");
+              formattedTimeInUserTz = `${tzYear}-${tzMonth}-${tzDay} ${tzHours}:${tzMinutes}`;
               console.log(
                 `Time in user timezone (${userTimezone}): ${formattedTimeInUserTz}`
               );
@@ -177,6 +161,8 @@ const checkUpcomingAppointments = async () => {
             );
           }
 
+          // Calculate minutes until start based on the current time
+          // We still use UTC for calculations to ensure consistency
           const minutesToStart = Math.round(
             (apptTime.getTime() - now.getTime()) / (60 * 1000)
           );
@@ -185,6 +171,7 @@ const checkUpcomingAppointments = async () => {
           console.log(`Current time (ISO): ${now.toISOString()}`);
           console.log(`Minutes until start: ${minutesToStart}`);
 
+          // Send reminder exactly at 15 minutes before start
           const needsReminder =
             minutesToStart === REMINDER_INTERVAL &&
             (appt.reminder_sent === null || appt.reminder_sent === "false");
@@ -203,6 +190,7 @@ const checkUpcomingAppointments = async () => {
               let participantEmails = [];
               let recipientEmail = "";
 
+              // First try to use owner_email if available
               if (appt.owner_email) {
                 recipientEmail = appt.owner_email;
                 console.log(`Using owner email: ${recipientEmail}`);
@@ -252,35 +240,16 @@ const checkUpcomingAppointments = async () => {
                   `Using time format in email: ${timeToDisplay} (timezone: ${userTimezone})`
                 );
 
-                const emailResult = await sendAppointmentReminderEmail(
+                const result = await sendAppointmentReminderEmail(
                   recipientEmail,
                   appt.title,
                   timeToDisplay,
                   appt.location || "No location specified",
+                  appt.description || "No description provided",
                   appt.owner_name || "MeetNing",
                   [] // No BCC recipients for debug
                 );
-
-                if (emailResult && emailResult.messageId) { // Check if email was sent successfully by Nodemailer's typical response
-                  console.log(`Reminder email sent successfully for appointment ID ${appt.id}: ${emailResult.messageId}`);
-                  // Update reminder_sent flag in the database
-                  try {
-                    const updateQuery = {
-                      text: `
-                        UPDATE embeddings
-                        SET metadata = jsonb_set(metadata, '{reminder_sent}', 'true', true)
-                        WHERE id = $1
-                      `,
-                      values: [appt.id],
-                    };
-                    await pool.query(updateQuery);
-                    console.log(`Successfully updated reminder_sent flag for appointment ID ${appt.id}`);
-                  } catch (dbError) {
-                    console.error(`Error updating reminder_sent flag for appointment ID ${appt.id}:`, dbError);
-                  }
-                } else {
-                  console.log(`Failed to send reminder email for appointment ID ${appt.id}. Email service response:`, emailResult);
-                }
+                console.log("Email send result:", result);
               } else {
                 console.log("⚠️ No valid recipient email found for reminder");
               }
