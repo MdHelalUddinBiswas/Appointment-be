@@ -1,5 +1,5 @@
-const nodemailer = require('nodemailer');
-require('dotenv').config();
+const nodemailer = require("nodemailer");
+require("dotenv").config();
 
 // Create Nodemailer transporter
 const createTransporter = () => {
@@ -34,7 +34,9 @@ const sendOTPEmail = async (email, otp, name) => {
 
     // Check if email credentials are configured
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-      console.warn("EMAIL_USER or EMAIL_PASSWORD not configured. OTP email not sent.");
+      console.warn(
+        "EMAIL_USER or EMAIL_PASSWORD not configured. OTP email not sent."
+      );
       return true; // Continue the flow even if email is not sent
     }
 
@@ -164,7 +166,9 @@ const sendPasswordResetEmail = async (email, resetUrl, name) => {
 
     // Check if email credentials are configured
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-      console.warn("Email credentials not configured. Password reset email not sent.");
+      console.warn(
+        "Email credentials not configured. Password reset email not sent."
+      );
       return;
     }
 
@@ -236,15 +240,23 @@ const sendPasswordResetEmail = async (email, resetUrl, name) => {
  * @param {string} appointmentTitle - Title of the appointment
  * @param {string} appointmentTime - Formatted appointment time
  * @param {string} location - Appointment location
- * @param {string} description - Appointment description
  * @param {string} organizerName - Name of the appointment organizer
  * @param {Array<string>} bccRecipients - Optional list of BCC recipients
  */
-const sendAppointmentReminderEmail = async (recipientEmail, appointmentTitle, appointmentTime, location, description, organizerName, bccRecipients = []) => {
+const sendAppointmentReminderEmail = async (
+  recipientEmail,
+  appointmentTitle,
+  appointmentTime,
+  location,
+  organizerName,
+  bccRecipients = []
+) => {
   try {
     // Check if email credentials are configured
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-      console.warn("Email credentials not configured. Appointment reminder email not sent.");
+      console.warn(
+        "Email credentials not configured. Appointment reminder email not sent."
+      );
       return;
     }
 
@@ -264,8 +276,11 @@ const sendAppointmentReminderEmail = async (recipientEmail, appointmentTitle, ap
           <p><strong>Appointment:</strong> ${appointmentTitle}</p>
           <p><strong>Time:</strong> ${appointmentTime} (in 15 minutes)</p>
           <p><strong>Location:</strong> ${location}</p>
-          ${description ? `<p><strong>Description:</strong> ${description}</p>` : ''}
-          ${organizerName ? `<p><strong>Organized by:</strong> ${organizerName}</p>` : ''}
+          ${
+            organizerName
+              ? `<p><strong>Organized by:</strong> ${organizerName}</p>`
+              : ""
+          }
         </div>
         
         <p>Please make sure you're prepared for this meeting.</p>
@@ -283,8 +298,7 @@ const sendAppointmentReminderEmail = async (recipientEmail, appointmentTitle, ap
       Appointment: ${appointmentTitle}
       Time: ${appointmentTime} (in 15 minutes)
       Location: ${location}
-      ${description ? `Description: ${description}` : ''}
-      ${organizerName ? `Organized by: ${organizerName}` : ''}
+      ${organizerName ? `Organized by: ${organizerName}` : ""}
       
       Please make sure you're prepared for this meeting.
       
@@ -300,10 +314,19 @@ const sendAppointmentReminderEmail = async (recipientEmail, appointmentTitle, ap
       html: htmlContent,
       text: textContent,
     };
-    
+
     // Add BCC recipients if provided
-    if (bccRecipients && bccRecipients.length > 0) {
-      mailOptions.bcc = bccRecipients.map(email => email.toLowerCase()).join(',');
+    if (Array.isArray(bccRecipients) && bccRecipients.length > 0) {
+      mailOptions.bcc = bccRecipients
+        .map((email) => email.toLowerCase())
+        .join(",");
+    } else if (bccRecipients && !Array.isArray(bccRecipients)) {
+      // Log a warning if bccRecipients is provided but is not an array
+      console.warn(
+        `[email.service] sendAppointmentReminderEmail: bccRecipients was expected to be an array but received type ${typeof bccRecipients}. Value:`,
+        bccRecipients
+      );
+      // Depending on desired behavior, you might choose to not set BCC or handle differently
     }
 
     const info = await transporter.sendMail(mailOptions);
@@ -319,5 +342,5 @@ const sendAppointmentReminderEmail = async (recipientEmail, appointmentTitle, ap
 module.exports = {
   sendOTPEmail,
   sendPasswordResetEmail,
-  sendAppointmentReminderEmail
+  sendAppointmentReminderEmail,
 };
