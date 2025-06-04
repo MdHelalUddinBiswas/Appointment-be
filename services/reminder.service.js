@@ -249,7 +249,27 @@ const checkUpcomingAppointments = async () => {
                   appt.owner_name || "MeetNing",
                   [] // No BCC recipients for debug
                 );
-                console.log("Email send result:", result);
+
+                if (result && result.messageId) { // Check if email was sent successfully by Nodemailer's typical response
+                  console.log(`Reminder email sent successfully for appointment ID ${appt.id}: ${result.messageId}`);
+                  // Update reminder_sent flag in the database
+                  try {
+                    const updateQuery = {
+                      text: `
+                        UPDATE embeddings
+                        SET metadata = jsonb_set(metadata, '{reminder_sent}', 'true', true)
+                        WHERE id = $1
+                      `,
+                      values: [appt.id],
+                    };
+                    await pool.query(updateQuery);
+                    console.log(`Successfully updated reminder_sent flag for appointment ID ${appt.id}`);
+                  } catch (dbError) {
+                    console.error(`Error updating reminder_sent flag for appointment ID ${appt.id}:`, dbError);
+                  }
+                } else {
+                  console.log(`Failed to send reminder email for appointment ID ${appt.id}. Email service response:`, result);
+                }
               } else {
                 console.log("⚠️ No valid recipient email found for reminder");
               }
