@@ -1,43 +1,34 @@
 const { sendAppointmentReminderEmail } = require("./email.service");
 const { pool } = require("../config/database");
-const cron = require("node-cron");
-
-// Track processed appointments to avoid duplicates
-const processedAppointments = new Set();
 
 // Constants for reminder timing
 const REMINDER_INTERVAL = 15; 
 
 /**
- * Initialize the appointment reminder scheduler
- * @returns {Promise<void>}
+ * Initialize the appointment reminder system
+ * For Vercel deployments, this does minimal setup since we'll use Vercel Cron
+ * @returns {Promise<boolean>} Success status
  */
 const scheduleAppointmentReminders = async () => {
   try {
-    console.log("Setting up appointment reminder scheduler...");
-
-    // Clear any previously tracked appointments when server restarts
-    processedAppointments.clear();
-
-    cron.schedule("* * * * *", async () => {
-      try {
-        await checkUpcomingAppointments();
-      } catch (cronError) {
-        console.error("Error in reminder scheduler:", cronError);
-      }
-    });
-
-    console.log("Reminder scheduler initialized successfully");
+    // For Vercel, logs for monitoring purposes
+    console.log("Setting up reminder system for Vercel environment...");
+    
+    // No actual scheduling here - we'll rely on Vercel Cron to call our endpoint
+    // See vercel.json for the cron configuration
+    
+    console.log("Reminder system initialized for serverless environment");
     return true;
   } catch (error) {
-    console.error("Error initializing reminder scheduler:", error);
+    console.error("Error initializing reminder system:", error);
     return false;
   }
 };
 
 /**
  * Check for appointments that need reminders and send emails
- * @returns {Promise<void>}
+ * This function is designed to work in a serverless environment
+ * @returns {Promise<{success: boolean, processed: number}>} Status and count of processed appointments
  */
 const checkUpcomingAppointments = async () => {
   try {
@@ -46,28 +37,34 @@ const checkUpcomingAppointments = async () => {
     // Use ISO time for logging to avoid timezone issues
     const currentTimeIso = now.toISOString();
 
+    // Calculate target time (15 minutes from now)
     const targetTime = new Date(now.getTime() + REMINDER_INTERVAL * 60 * 1000);
     const targetTimeIso = targetTime.toISOString();
 
-    // Log clear headers for debugging
+    // Log execution info (helpful for Vercel logs)
     console.log("\n==================================================");
-    console.log(`🔔 APPOINTMENT REMINDER CHECK`);
+    console.log(`🔔 APPOINTMENT REMINDER CHECK - ${new Date().toISOString()}`);
     console.log("==================================================");
     console.log(`Current time (ISO): ${currentTimeIso}`);
-    console.log(
-      `Looking for appointments exactly ${REMINDER_INTERVAL} minutes before start time`
-    );
-    console.log(`Target reminder timestamp: ${targetTimeIso}`);
+    console.log(`Looking for appointments ${REMINDER_INTERVAL} minutes from now`);
+    console.log(`Target window: ${targetTimeIso}`);
     console.log("--------------------------------------------------");
-
-    // Also run a direct query to find the specific appointment we're looking for (for debugging)
-    console.log(
-      "Running additional debug query to check all upcoming appointments..."
-    );
+    
+    // Record execution in logs for monitoring
+    console.log(`Vercel cron execution timestamp: ${new Date().toISOString()}`);
 
     const startIso = now.toISOString();
 
-    const debugQuery = {
+    // Calculate the time window for appointments needing reminders
+    // We'll look for appointments that:
+    // 1. Start between 14-16 minutes from now (to account for function execution time)
+    // 2. Have not had their reminder sent already
+    const reminderWindowStart = new Date(now.getTime() + (REMINDER_INTERVAL - 1) * 60 * 1000).toISOString();
+    const reminderWindowEnd = new Date(now.getTime() + (REMINDER_INTERVAL + 1) * 60 * 1000).toISOString();
+    
+    console.log(`Reminder window: ${reminderWindowStart} to ${reminderWindowEnd}`);
+    
+    const reminderQuery = {
       text: `
         SELECT 
           e.id, 
@@ -86,17 +83,20 @@ const checkUpcomingAppointments = async () => {
         WHERE 
           e.content LIKE '%appointment%'
           AND e.metadata IS NOT NULL 
-          AND e.metadata->>'start_time' > $1
+          AND e.metadata->>'start_time' >= $1
+          AND e.metadata->>'start_time' <= $2
+          AND (e.metadata->>'reminder_sent' IS NULL OR e.metadata->>'reminder_sent' = 'false')
         ORDER BY e.metadata->>'start_time' ASC
-        LIMIT 20
       `,
-      values: [startIso],
+      values: [reminderWindowStart, reminderWindowEnd],
     };
 
-    const debugResult = await pool.query(debugQuery);
-    if (debugResult.rows.length > 0) {
-      console.log("\n------ UPCOMING APPOINTMENTS IN DATABASE ------");
-      for (const appt of debugResult.rows) {
+    const reminderResult = await pool.query(reminderQuery);
+    
+    if (reminderResult.rows.length > 0) {
+      console.log(`\n------ FOUND ${reminderResult.rows.length} APPOINTMENTS NEEDING REMINDERS ------`);
+      let processedCount = 0;
+      for (const appt of reminderResult.rows) {
         try {
           const apptTime = new Date(appt.start_time);
           // Use ISO format for consistency across timezones
@@ -161,20 +161,18 @@ const checkUpcomingAppointments = async () => {
             );
           }
 
-          // Calculate minutes until start based on the current time
-          // We still use UTC for calculations to ensure consistency
+          // Calculate minutes until start for logging purposes
           const minutesToStart = Math.round(
             (apptTime.getTime() - now.getTime()) / (60 * 1000)
           );
 
-          console.log(`Appointment time (ISO): ${apptTime.toISOString()}`);
+          console.log(`Appointment ID ${appt.id} time (ISO): ${apptTime.toISOString()}`);
           console.log(`Current time (ISO): ${now.toISOString()}`);
           console.log(`Minutes until start: ${minutesToStart}`);
-
-          // Send reminder exactly at 15 minutes before start
-          const needsReminder =
-            minutesToStart === REMINDER_INTERVAL &&
-            (appt.reminder_sent === null || appt.reminder_sent === "false");
+          
+          // This appointment is already in our target window based on query
+          // and hasn't had a reminder sent yet
+          const needsReminder = true;
 
           console.log(
             `Should get reminder: ${
@@ -264,6 +262,7 @@ const checkUpcomingAppointments = async () => {
                     };
                     await pool.query(updateQuery);
                     console.log(`Successfully updated reminder_sent flag for appointment ID ${appt.id}`);
+                    processedCount++; // Count successful reminders
                   } catch (dbError) {
                     console.error(`Error updating reminder_sent flag for appointment ID ${appt.id}:`, dbError);
                   }
@@ -282,11 +281,30 @@ const checkUpcomingAppointments = async () => {
         }
       }
       console.log("\n-------------------------------------------");
+      console.log(`Successfully processed ${processedCount} appointment reminders`);
+      return {
+        success: true,
+        processed: processedCount,
+        timestamp: new Date().toISOString(),
+        message: `Processed ${processedCount} appointment reminders`
+      };
     } else {
-      console.log("No upcoming appointments found in the system");
+      console.log("No appointments requiring reminders found in the system");
+      return {
+        success: true,
+        processed: 0,
+        timestamp: new Date().toISOString(),
+        message: "No appointments requiring reminders"
+      };
     }
   } catch (error) {
     console.error("Error checking for upcoming appointments:", error);
+    return {
+      success: false,
+      processed: 0,
+      timestamp: new Date().toISOString(),
+      error: error.message || 'Unknown error'
+    };
   }
 };
 

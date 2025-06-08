@@ -35,6 +35,7 @@ const integrationRoutes = require('./routes/integration.routes');
 const meetingRoutes = require('./routes/meeting.routes');
 const conflictCheckerRoutes = require('./routes/conflict-checker');
 const availabilityRoutes = require('./routes/availability.routes');
+const cronRoutes = require('./routes/cron.routes'); // Add the new cron routes
 
 // Basic routes
 app.get("/", (req, res) => {
@@ -62,6 +63,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/integration", integrationRoutes);
 app.use("/api/meetings", meetingRoutes);
 app.use("/api/conflicts", conflictCheckerRoutes);
+app.use("/api/cron", cronRoutes); // Register the cron routes
 
 // Initialize and start the server
 const startServer = async () => {
