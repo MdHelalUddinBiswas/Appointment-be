@@ -1,23 +1,33 @@
 const { sendAppointmentReminderEmail } = require("./email.service");
 const { pool } = require("../config/database");
+const cron = require("node-cron");
+
+// Track processed appointments to avoid duplicates
+const processedAppointments = new Set();
 
 // Constants for reminder timing
-const REMINDER_INTERVAL = 15; 
+const REMINDER_INTERVAL = 15;
 
 /**
- * Initialize the appointment reminder system
- * For Vercel deployments, this does minimal setup since we'll use Vercel Cron
- * @returns {Promise<boolean>} Success status
+ * Initialize the appointment reminder scheduler
+ * @returns {Promise<void>}
  */
 const scheduleAppointmentReminders = async () => {
   try {
-    // For Vercel, logs for monitoring purposes
-    console.log("Setting up reminder system for Vercel environment...");
-    
-    // No actual scheduling here - we'll rely on Vercel Cron to call our endpoint
-    // See vercel.json for the cron configuration
-    
-    console.log("Reminder system initialized for serverless environment");
+    console.log("Setting up appointment reminder scheduler...");
+
+    // Clear any previously tracked appointments when server restarts
+    processedAppointments.clear();
+
+    cron.schedule("* * * * *", async () => {
+      try {
+        await checkUpcomingAppointments();
+      } catch (cronError) {
+        console.error("Error in reminder scheduler:", cronError);
+      }
+    });
+
+    console.log("Reminder scheduler initialized successfully");
     return true;
   } catch (error) {
     console.error("Error initializing reminder cron job:", error);
@@ -27,8 +37,7 @@ const scheduleAppointmentReminders = async () => {
 
 /**
  * Check for appointments that need reminders and send emails
- * This function is designed to work in a serverless environment
- * @returns {Promise<{success: boolean, processed: number}>} Status and count of processed appointments
+ * @returns {Promise<void>}
  */
 const checkUpcomingAppointments = async () => {
   try {
@@ -37,34 +46,28 @@ const checkUpcomingAppointments = async () => {
     // Use ISO time for logging to avoid timezone issues
     const currentTimeIso = now.toISOString();
 
-    // Calculate target time (15 minutes from now)
     const targetTime = new Date(now.getTime() + REMINDER_INTERVAL * 60 * 1000);
     const targetTimeIso = targetTime.toISOString();
 
-    // Log execution info (helpful for Vercel logs)
+    // Log clear headers for debugging
     console.log("\n==================================================");
-    console.log(`🔔 APPOINTMENT REMINDER CHECK - ${new Date().toISOString()}`);
+    console.log(`🔔 APPOINTMENT REMINDER CHECK`);
     console.log("==================================================");
     console.log(`Current time (ISO): ${currentTimeIso}`);
-    console.log(`Looking for appointments ${REMINDER_INTERVAL} minutes from now`);
-    console.log(`Target window: ${targetTimeIso}`);
+    console.log(
+      `Looking for appointments exactly ${REMINDER_INTERVAL} minutes before start time`
+    );
+    console.log(`Target reminder timestamp: ${targetTimeIso}`);
     console.log("--------------------------------------------------");
-    
-    // Record execution in logs for monitoring
-    console.log(`Vercel cron execution timestamp: ${new Date().toISOString()}`);
+
+    // Also run a direct query to find the specific appointment we're looking for (for debugging)
+    console.log(
+      "Running additional debug query to check all upcoming appointments..."
+    );
 
     const startIso = now.toISOString();
 
-    // Calculate the time window for appointments needing reminders
-    // We'll look for appointments that:
-    // 1. Start between 14-16 minutes from now (to account for function execution time)
-    // 2. Have not had their reminder sent already
-    const reminderWindowStart = new Date(now.getTime() + (REMINDER_INTERVAL - 1) * 60 * 1000).toISOString();
-    const reminderWindowEnd = new Date(now.getTime() + (REMINDER_INTERVAL + 1) * 60 * 1000).toISOString();
-    
-    console.log(`Reminder window: ${reminderWindowStart} to ${reminderWindowEnd}`);
-    
-    const reminderQuery = {
+    const debugQuery = {
       text: `
         SELECT 
           e.id, 
@@ -83,20 +86,17 @@ const checkUpcomingAppointments = async () => {
         WHERE 
           e.content LIKE '%appointment%'
           AND e.metadata IS NOT NULL 
-          AND e.metadata->>'start_time' >= $1
-          AND e.metadata->>'start_time' <= $2
-          AND (e.metadata->>'reminder_sent' IS NULL OR e.metadata->>'reminder_sent' = 'false')
+          AND e.metadata->>'start_time' > $1
         ORDER BY e.metadata->>'start_time' ASC
+        LIMIT 20
       `,
-      values: [reminderWindowStart, reminderWindowEnd],
+      values: [startIso],
     };
 
-    const reminderResult = await pool.query(reminderQuery);
-    
-    if (reminderResult.rows.length > 0) {
-      console.log(`\n------ FOUND ${reminderResult.rows.length} APPOINTMENTS NEEDING REMINDERS ------`);
-      let processedCount = 0;
-      for (const appt of reminderResult.rows) {
+    const debugResult = await pool.query(debugQuery);
+    if (debugResult.rows.length > 0) {
+      console.log("\n------ UPCOMING APPOINTMENTS IN DATABASE ------");
+      for (const appt of debugResult.rows) {
         try {
           const apptTime = new Date(appt.start_time);
           // Use ISO format for consistency across timezones
@@ -161,18 +161,20 @@ const checkUpcomingAppointments = async () => {
             );
           }
 
-          // Calculate minutes until start for logging purposes
+          // Calculate minutes until start based on the current time
+          // We still use UTC for calculations to ensure consistency
           const minutesToStart = Math.round(
             (apptTime.getTime() - now.getTime()) / (60 * 1000)
           );
 
-          console.log(`Appointment ID ${appt.id} time (ISO): ${apptTime.toISOString()}`);
+          console.log(`Appointment time (ISO): ${apptTime.toISOString()}`);
           console.log(`Current time (ISO): ${now.toISOString()}`);
           console.log(`Minutes until start: ${minutesToStart}`);
-          
-          // This appointment is already in our target window based on query
-          // and hasn't had a reminder sent yet
-          const needsReminder = true;
+
+          // Send reminder exactly at 15 minutes before start
+          const needsReminder =
+            minutesToStart === REMINDER_INTERVAL &&
+            (appt.reminder_sent === null || appt.reminder_sent === "false");
 
           console.log(
             `Should get reminder: ${
@@ -248,8 +250,11 @@ const checkUpcomingAppointments = async () => {
                   [] // No BCC recipients for debug
                 );
 
-                if (result && result.messageId) { // Check if email was sent successfully by Nodemailer's typical response
-                  console.log(`Reminder email sent successfully for appointment ID ${appt.id}: ${result.messageId}`);
+                if (result && result.messageId) {
+                  // Check if email was sent successfully by Nodemailer's typical response
+                  console.log(
+                    `Reminder email sent successfully for appointment ID ${appt.id}: ${result.messageId}`
+                  );
                   // Update reminder_sent flag in the database
                   try {
                     const updateQuery = {
@@ -261,13 +266,20 @@ const checkUpcomingAppointments = async () => {
                       values: [appt.id],
                     };
                     await pool.query(updateQuery);
-                    console.log(`Successfully updated reminder_sent flag for appointment ID ${appt.id}`);
-                    processedCount++; // Count successful reminders
+                    console.log(
+                      `Successfully updated reminder_sent flag for appointment ID ${appt.id}`
+                    );
                   } catch (dbError) {
-                    console.error(`Error updating reminder_sent flag for appointment ID ${appt.id}:`, dbError);
+                    console.error(
+                      `Error updating reminder_sent flag for appointment ID ${appt.id}:`,
+                      dbError
+                    );
                   }
                 } else {
-                  console.log(`Failed to send reminder email for appointment ID ${appt.id}. Email service response:`, result);
+                  console.log(
+                    `Failed to send reminder email for appointment ID ${appt.id}. Email service response:`,
+                    result
+                  );
                 }
               } else {
                 console.log("⚠️ No valid recipient email found for reminder");
@@ -281,30 +293,11 @@ const checkUpcomingAppointments = async () => {
         }
       }
       console.log("\n-------------------------------------------");
-      console.log(`Successfully processed ${processedCount} appointment reminders`);
-      return {
-        success: true,
-        processed: processedCount,
-        timestamp: new Date().toISOString(),
-        message: `Processed ${processedCount} appointment reminders`
-      };
     } else {
-      console.log("No appointments requiring reminders found in the system");
-      return {
-        success: true,
-        processed: 0,
-        timestamp: new Date().toISOString(),
-        message: "No appointments requiring reminders"
-      };
+      console.log("No upcoming appointments found in the system");
     }
   } catch (error) {
     console.error("Error checking for upcoming appointments:", error);
-    return {
-      success: false,
-      processed: 0,
-      timestamp: new Date().toISOString(),
-      error: error.message || 'Unknown error'
-    };
   }
 };
 
