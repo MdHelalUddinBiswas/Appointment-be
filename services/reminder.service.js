@@ -20,7 +20,7 @@ const scheduleAppointmentReminders = async () => {
     console.log("Reminder system initialized for serverless environment");
     return true;
   } catch (error) {
-    console.error("Error initializing reminder system:", error);
+    console.error("Error initializing reminder cron job:", error);
     return false;
   }
 };
