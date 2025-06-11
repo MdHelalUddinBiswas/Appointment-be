@@ -1,6 +1,6 @@
 const { OpenAIEmbeddings } = require("@langchain/openai");
 const { PGVectorStore } = require("@langchain/community/vectorstores/pgvector");
-require('dotenv').config();
+require("dotenv").config();
 
 // Helper function to get environment variables safely
 function getEnvVariable(key, defaultValue = "") {
@@ -43,9 +43,7 @@ const initializeVectorStore = async () => {
   try {
     pgvectorStore = await getVectorStore(
       {
-        connectionString:
-          process.env.DATABASE_URL ||
-          "postgresql://postgres:postgres@localhost:5432/meetning",
+        connectionString: process.env.DATABASE_URL,
         tableName: "embeddings",
       },
       embeddings
@@ -72,5 +70,5 @@ const getVectorStoreInstance = () => {
 module.exports = {
   initializeVectorStore,
   getVectorStoreInstance,
-  embeddings
+  embeddings,
 };
