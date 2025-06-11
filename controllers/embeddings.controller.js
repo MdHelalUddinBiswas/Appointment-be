@@ -1,5 +1,5 @@
-const { pool } = require('../config/database');
-const { getVectorStoreInstance } = require('../services/vectorStore.service');
+const { pool } = require("../config/database");
+const { getVectorStoreInstance } = require("../services/vectorStore.service");
 
 // Add appointment data to vector store
 const addAppointments = async (req, res) => {
@@ -63,9 +63,11 @@ const addAppointments = async (req, res) => {
       // Store original ISO format dates
       const isoStartTime = appointment.start_time;
       const isoEndTime = appointment.end_time;
-      
+
       // Format dates for human-readable content
-      const formattedStartTime = new Date(appointment.start_time).toLocaleString();
+      const formattedStartTime = new Date(
+        appointment.start_time
+      ).toLocaleString();
       const formattedEndTime = new Date(appointment.end_time).toLocaleString();
 
       // Create document content
@@ -90,8 +92,8 @@ const addAppointments = async (req, res) => {
         metadata: {
           id: appointment.id,
           title: appointment.title,
-          start_time: isoStartTime,  // Use ISO format for database storage
-          end_time: isoEndTime,      // Use ISO format for database storage
+          start_time: isoStartTime, // Use ISO format for database storage
+          end_time: isoEndTime, // Use ISO format for database storage
           status: appointment.status || "scheduled",
           participants_count: participantsCount,
           participants: formattedParticipants,
@@ -290,7 +292,7 @@ const getAppointmentById = async (req, res) => {
     else if (formattedParticipants.some((p) => p.email === req.user.email)) {
       role = "participant";
     }
- 
+
     console.log(`User role for appointment ${appointmentId}: ${role}`);
 
     // Map the embedding data to the expected appointment format
@@ -716,7 +718,7 @@ const addParticipant = async (req, res) => {
       const endDate = new Date(metadata.end_time);
 
       // Send email notification via your existing route
-      const fetch = require('node-fetch');
+      const fetch = require("node-fetch");
       const emailResponse = await fetch(
         `${process.env.FRONTEND_URL}/api/send-email`,
         {
@@ -772,5 +774,5 @@ module.exports = {
   updateAppointment,
   markAppointmentAsCompleted,
   cancelAppointment,
-  addParticipant
+  addParticipant,
 };

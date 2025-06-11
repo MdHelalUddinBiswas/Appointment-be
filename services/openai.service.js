@@ -15,8 +15,21 @@ const model = new ChatOpenAI({
   temperature: 0.7,
 });
 
+// Helper function to format date
+const formatDate = (date) => {
+  return new Date(date).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+};
+
 // Create prompt template for answering questions about appointments
-const template = `You are a helpful assistant for the MeetNing Appointment AI system. Using ONLY the following context, answer the question about appointments, schedules, and meetings. Format your response in a clear and organized way. Include all relevant details about appointments that match the query.
+const template = `You are a helpful assistant for the MeetNing Appointment AI system. 
+Today's date is ${formatDate(new Date())}.
+
+Using ONLY the following context, answer the question about appointments, schedules, and meetings. Format your response in a clear and organized way. Include all relevant details about appointments that match the query.
 
 Context:
 {context}
