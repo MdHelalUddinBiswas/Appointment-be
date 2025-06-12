@@ -42,29 +42,45 @@ const prompt = PromptTemplate.fromTemplate(template);
 const outputParser = new StringOutputParser();
 
 // Create chain for generating responses
-const createChatChain = () => {
+const createChatChain = (userContext) => {
   const pgvectorStore = getVectorStoreInstance();
 
   return RunnableSequence.from([
     {
       context: async (input) => {
-        const docs = await pgvectorStore.similaritySearch(input, 10);
-        console.log("Search input:", input);
+        // input can be an object: { message, userId, userEmail }
+        const query = typeof input === 'object' && input.message ? input.message : input;
+        const userId = typeof input === 'object' && input.userId ? input.userId : (userContext?.userId || null);
+        const userEmail = typeof input === 'object' && input.userEmail ? input.userEmail : (userContext?.userEmail || null);
+
+        const docs = await pgvectorStore.similaritySearch(query, 10);
+        console.log("Search input:", query);
         console.log("Found documents:", docs.length);
 
-        return docs
+        // Filter docs by user_id or participants
+        const filteredDocs = docs.filter(doc => {
+          const isOwner = doc.metadata?.user_id === userId;
+          const isParticipant = Array.isArray(doc.metadata?.participants) &&
+            doc.metadata.participants.some(
+              p => (typeof p === "string" ? p : p?.email) === userEmail
+            );
+          return isOwner || isParticipant;
+        });
+
+        return filteredDocs
           .map(
             (doc) =>
               `[Appointment: ${doc.metadata.title || "Untitled"}] ${
                 doc.pageContent
               } - Start: ${doc.metadata.start_time || "Unknown"} - End: ${
-                doc.metadata.end_time || "Unknown"
+                doc.metadata.end_time || "Unknown"}
               } - Status: ${doc.metadata.status || "Unknown"} - Participants: ${
-                doc.metadata.participants_count || "0"
+                doc.metadata.participants_count || "0"}
               }
               - participants: ${
-                doc.metadata?.participants.map((p) => p?.email).join(", ") ||
-                "Unknown"
+                Array.isArray(doc.metadata?.participants)
+                  ? doc.metadata.participants.map((p) => typeof p === "string" ? p : p?.email).join(", ")
+                  : "Unknown"
               }`
           )
           .join("\n");
@@ -78,12 +94,32 @@ const createChatChain = () => {
 };
 
 // Function to process chat queries
-const processChat = async (message) => {
-  const pgvectorStore = getVectorStoreInstance();
+const processChat = async (message, userContext = {}) => {
+  const lowerCaseMessage = message.toLowerCase().trim();
+  const greetings = ["hi", "hello", "hey"];
+  if (greetings.includes(lowerCaseMessage)) {
+    return {
+      response: "Hello! How can I help you with your appointments today?",
+      hasDocuments: true,
+    };
+  }
 
-  // First check if we have any documents
+  const pgvectorStore = getVectorStoreInstance();
+  const userId = userContext.userId;
+  const userEmail = userContext.userEmail;
+
+  // First check if we have any documents for this user (as owner or participant)
   const docs = await pgvectorStore.similaritySearch(message, 5);
-  if (!docs || docs.length === 0) {
+  const filteredDocs = docs.filter(doc => {
+    const isOwner = doc.metadata?.user_id === userId;
+    const isParticipant = Array.isArray(doc.metadata?.participants) &&
+      doc.metadata.participants.some(
+        p => (typeof p === "string" ? p : p?.email) === userEmail
+      );
+    return isOwner || isParticipant;
+  });
+
+  if (!filteredDocs || filteredDocs.length === 0) {
     return {
       response:
         "I don't have any information about your appointments yet. Please add your appointment data first.",
@@ -91,8 +127,9 @@ const processChat = async (message) => {
     };
   }
 
-  const chain = createChatChain();
-  const result = await chain.invoke(message);
+  // Pass user context to the chain for further filtering
+  const chain = createChatChain(userContext);
+  const result = await chain.invoke({ message, ...userContext });
 
   return {
     response: result.trim(),
