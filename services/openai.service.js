@@ -29,7 +29,7 @@ const formatDate = (date) => {
 const template = `You are a helpful assistant for the MeetNing Appointment AI system. 
 Today's date is ${formatDate(new Date())}.
 
-Using ONLY the following context, answer the question about appointments, schedules, and meetings. Format your response in a clear and organized way. Include all relevant details about appointments that match the query.
+Using ONLY the following context, answer the question about appointments, schedules, and meetings. Format your response using GitHub-flavored markdown. Use headings, lists, and bold text to make the information clear and easy to read.
 
 Context:
 {context}

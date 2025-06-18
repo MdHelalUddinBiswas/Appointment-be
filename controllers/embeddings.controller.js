@@ -710,45 +710,45 @@ const addParticipant = async (req, res) => {
     const result = await pool.query(updateQuery);
 
     // Try to send email notification to the new participant
-    try {
-      console.log("Sending email notification to:", email);
+    // try {
+    //   console.log("Sending email notification to:", email);
 
-      // Create proper date and time objects for the email
-      const appointmentDate = new Date(metadata.start_time);
-      const endDate = new Date(metadata.end_time);
+    //   // Create proper date and time objects for the email
+    //   const appointmentDate = new Date(metadata.start_time);
+    //   const endDate = new Date(metadata.end_time);
 
-      // Send email notification via your existing route
-      const fetch = require("node-fetch");
-      const emailResponse = await fetch(
-        `${process.env.FRONTEND_URL}/api/send-email`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            to: [email],
-            subject: `You've been added to "${metadata.title}" appointment`,
-            appointmentTitle: metadata.title,
-            startTime: appointmentDate.toISOString(),
-            endTime: endDate.toISOString(),
-            location: metadata.location || "Not specified",
-            description: metadata.description || "",
-            addedAt: new Date().toISOString(),
-            useNodemailer: true,
-          }),
-        }
-      );
+    //   // Send email notification via your existing route
+    //   const fetch = require("node-fetch");
+    //   const emailResponse = await fetch(
+    //     `${process.env.FRONTEND_URL}/api/send-email`,
+    //     {
+    //       method: "POST",
+    //       headers: {
+    //         "Content-Type": "application/json",
+    //       },
+    //       body: JSON.stringify({
+    //         to: [email],
+    //         subject: `You've been added to "${metadata.title}" appointment`,
+    //         appointmentTitle: metadata.title,
+    //         startTime: appointmentDate.toISOString(),
+    //         endTime: endDate.toISOString(),
+    //         location: metadata.location || "Not specified",
+    //         description: metadata.description || "",
+    //         addedAt: new Date().toISOString(),
+    //         useNodemailer: true,
+    //       }),
+    //     }
+    //   );
 
-      if (!emailResponse.ok) {
-        console.log(
-          "Warning: Email notification failed, but participant was added"
-        );
-      }
-    } catch (emailError) {
-      console.error("Error sending email notification:", emailError);
-      // Don't throw here to avoid breaking the participant addition flow
-    }
+    //   if (!emailResponse.ok) {
+    //     console.log(
+    //       "Warning: Email notification failed, but participant was added"
+    //     );
+    //   }
+    // } catch (emailError) {
+    //   console.error("Error sending email notification:", emailError);
+    //   // Don't throw here to avoid breaking the participant addition flow
+    // }
 
     res.json({
       success: true,

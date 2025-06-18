@@ -4,7 +4,7 @@ const { getVectorStoreInstance } = require('../services/vectorStore.service');
 // Handle chat requests
 const handleChatRequest = async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message } = req?.body;
     const userId = req.user?.id;
     const userEmail = req.user?.email;
 
