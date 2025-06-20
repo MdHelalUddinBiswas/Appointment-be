@@ -120,38 +120,51 @@ exports.Prisma.TransactionIsolationLevel = makeStrictEnum({
   Serializable: 'Serializable'
 });
 
-exports.Prisma.AppointmentsScalarFieldEnum = {
-  id: 'id',
-  user_id: 'user_id',
-  title: 'title',
-  description: 'description',
-  start_time: 'start_time',
-  end_time: 'end_time',
-  location: 'location',
-  participants: 'participants',
-  status: 'status',
-  created_at: 'created_at'
-};
-
-exports.Prisma.CalendarsScalarFieldEnum = {
-  id: 'id',
-  user_id: 'user_id',
-  name: 'name',
-  description: 'description',
-  provider: 'provider',
-  access_token: 'access_token',
-  refresh_token: 'refresh_token',
-  token_expiry: 'token_expiry',
-  created_at: 'created_at'
-};
-
-exports.Prisma.UsersScalarFieldEnum = {
+exports.Prisma.UserScalarFieldEnum = {
   id: 'id',
   name: 'name',
   email: 'email',
   password: 'password',
   timezone: 'timezone',
-  created_at: 'created_at'
+  createdAt: 'createdAt',
+  isVerified: 'isVerified',
+  verificationOtp: 'verificationOtp',
+  otpExpiry: 'otpExpiry',
+  resetToken: 'resetToken',
+  resetTokenExpiry: 'resetTokenExpiry'
+};
+
+exports.Prisma.AppointmentScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  title: 'title',
+  description: 'description',
+  startTime: 'startTime',
+  endTime: 'endTime',
+  location: 'location',
+  participants: 'participants',
+  status: 'status',
+  reminderSent: 'reminderSent',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.EmbeddingScalarFieldEnum = {
+  id: 'id',
+  content: 'content',
+  metadata: 'metadata',
+  userId: 'userId'
+};
+
+exports.Prisma.CalendarScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  description: 'description',
+  provider: 'provider',
+  accessToken: 'accessToken',
+  refreshToken: 'refreshToken',
+  tokenExpiry: 'tokenExpiry',
+  createdAt: 'createdAt'
 };
 
 exports.Prisma.SortOrder = {
@@ -169,22 +182,23 @@ exports.Prisma.QueryMode = {
   insensitive: 'insensitive'
 };
 
+exports.Prisma.NullsOrder = {
+  first: 'first',
+  last: 'last'
+};
+
 exports.Prisma.JsonNullValueFilter = {
   DbNull: Prisma.DbNull,
   JsonNull: Prisma.JsonNull,
   AnyNull: Prisma.AnyNull
 };
 
-exports.Prisma.NullsOrder = {
-  first: 'first',
-  last: 'last'
-};
-
 
 exports.Prisma.ModelName = {
-  appointments: 'appointments',
-  calendars: 'calendars',
-  users: 'users'
+  User: 'User',
+  Appointment: 'Appointment',
+  Embedding: 'Embedding',
+  Calendar: 'Calendar'
 };
 
 /**

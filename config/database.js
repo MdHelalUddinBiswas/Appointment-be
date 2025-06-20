@@ -98,6 +98,20 @@ const initDatabase = async () => {
       )
     `);
 
+    // Enable vector extension
+    await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
+
+    // Create embeddings table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS embeddings (
+        id SERIAL PRIMARY KEY,
+        content TEXT,
+        embedding vector(1536),
+        metadata JSONB,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     console.log("Database tables initialized successfully");
     return true;
   } catch (error) {

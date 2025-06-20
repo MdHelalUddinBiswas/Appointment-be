@@ -1,10 +1,13 @@
-const { google } = require('googleapis');
-const { validateGoogleToken, getIntegrationByUserIdAndAppType } = require('./integration.service');
-const { IntegrationAppTypeEnum } = require('../models/integration.models');
-const { Pool } = require('pg');
+const { google } = require("googleapis");
+const {
+  validateGoogleToken,
+  getIntegrationByUserIdAndAppType,
+} = require("./integration.service");
+const { IntegrationAppTypeEnum } = require("../models/integration.models");
+const { Pool } = require("pg");
 
 // Create database connection
-const pool = process.env.DATABASE_URL 
+const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL })
   : new Pool({
       user: process.env.DB_USER,
@@ -36,22 +39,22 @@ const getCalendarClient = async (
         refreshToken,
         expiryDate
       );
-      
+
       // Configure the Google OAuth client
       const oauth2Client = new google.auth.OAuth2();
       oauth2Client.setCredentials({ access_token: validToken });
-      
+
       // Create Google Calendar API client
       const calendar = google.calendar({
         version: "v3",
         auth: oauth2Client,
       });
-      
+
       return {
         calendar,
         calendarType: IntegrationAppTypeEnum.GOOGLE_MEET_AND_CALENDAR,
       };
-      
+
     default:
       throw new Error(`Unsupported Calendar provider: ${appType}`);
   }
@@ -71,7 +74,7 @@ const createGoogleMeetMeeting = async (meetingData) => {
     startTime,
     endTime,
     attendees,
-    timezone = "UTC"
+    timezone = "UTC",
   } = meetingData;
 
   // Get user's Google integration
@@ -120,7 +123,8 @@ const createGoogleMeetMeeting = async (meetingData) => {
   });
 
   // Extract the Google Meet link
-  const meetLink = response.data.hangoutLink ||
+  const meetLink =
+    response.data.hangoutLink ||
     (response.data.conferenceData &&
       response.data.conferenceData.entryPoints &&
       response.data.conferenceData.entryPoints.find((e) => e.uri)?.uri);
@@ -167,21 +171,21 @@ const cancelMeetingService = async (meetingId, userId) => {
     FROM meetings m
     WHERE m.id = $1 AND m.user_id = $2
   `;
-  
+
   const meetingResult = await pool.query(meetingQuery, [meetingId, userId]);
   const meeting = meetingResult.rows[0];
-  
+
   if (!meeting) {
     throw new Error("Meeting not found");
   }
-  
+
   try {
     // Get user's integration
     const integration = await getIntegrationByUserIdAndAppType(
       userId,
       meeting.calendar_app_type
     );
-    
+
     if (integration) {
       // Get calendar client
       const { calendar } = await getCalendarClient(
@@ -190,7 +194,7 @@ const cancelMeetingService = async (meetingId, userId) => {
         integration.refresh_token,
         integration.expiry_date
       );
-      
+
       // Delete the event from Google Calendar
       await calendar.events.delete({
         calendarId: "primary",
@@ -201,7 +205,7 @@ const cancelMeetingService = async (meetingId, userId) => {
     console.error("Failed to delete event from calendar:", error);
     throw new Error("Failed to delete event from calendar");
   }
-  
+
   // Update meeting status in database
   const updateQuery = `
     UPDATE meetings
@@ -209,9 +213,9 @@ const cancelMeetingService = async (meetingId, userId) => {
     WHERE id = $1
     RETURNING id, status
   `;
-  
+
   const result = await pool.query(updateQuery, [meetingId]);
-  
+
   return { success: true, meeting: result.rows[0] };
 };
 

@@ -1,5 +1,6 @@
 const { OpenAIEmbeddings } = require("@langchain/openai");
 const { PGVectorStore } = require("@langchain/community/vectorstores/pgvector");
+const { pool } = require("../config/database");
 require("dotenv").config();
 
 // Helper function to get environment variables safely
@@ -20,45 +21,28 @@ const embeddings = new OpenAIEmbeddings({
   stripNewLines: true,
 });
 
-// Helper function to create vector store
-async function getVectorStore(config, embeddings) {
-  return await PGVectorStore.initialize(embeddings, {
-    postgresConnectionOptions: {
-      connectionString: config.connectionString,
-    },
-    tableName: config.tableName || "embeddings",
-    columns: {
-      idColumnName: "id",
-      vectorColumnName: "embedding",
-      contentColumnName: "content",
-      metadataColumnName: "metadata",
-    },
-  });
-}
-
 // Initialize vector store
 let pgvectorStore;
 
 const initializeVectorStore = async () => {
   try {
-    pgvectorStore = await getVectorStore(
-      {
-        connectionString: process.env.DATABASE_URL,
-        tableName: "embeddings",
+    // Use the existing pool from database.js
+    pgvectorStore = new PGVectorStore(embeddings, {
+      pool: pool,
+      tableName: "embeddings",
+      columns: {
+        idColumnName: "id",
+        vectorColumnName: "embedding",
+        contentColumnName: "content",
+        metadataColumnName: "metadata",
       },
-      embeddings
-    );
+    });
+
     console.log("Vector store initialized successfully");
     return pgvectorStore;
   } catch (error) {
     console.error("Error initializing vector store:", error);
-    // Create a mock vector store for fallback
-    pgvectorStore = {
-      similaritySearch: async () => [],
-      addDocuments: async () =>
-        console.log("Mock vector store: addDocuments called"),
-    };
-    return pgvectorStore;
+    throw error;
   }
 };
 

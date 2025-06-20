@@ -103,9 +103,38 @@ const addAppointments = async (req, res) => {
       };
     });
 
-    // Add documents to vector store
-    console.log(`Adding ${documents.length} appointments to vector store`);
-    await pgvectorStore.addDocuments(documents);
+    // Generate embeddings and create records
+    console.log(`Embedding ${documents.length} appointments...`);
+    const contents = documents.map((doc) => doc.pageContent);
+    const vectors = await pgvectorStore.embeddings.embedDocuments(contents);
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (let i = 0; i < documents.length; i++) {
+        const doc = documents[i];
+        const vector = vectors[i];
+        const query = {
+          text: `INSERT INTO embeddings (content, embedding, metadata, user_id) VALUES ($1, $2, $3, $4)`,
+          values: [
+            doc.pageContent,
+            `[${vector.join(",")}]`,
+            doc.metadata,
+            parseInt(doc.metadata.user_id, 10),
+          ],
+        };
+        await client.query(query);
+      }
+      await client.query("COMMIT");
+      console.log(`Successfully inserted ${documents.length} embeddings.`);
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("Error embedding appointments:", e);
+      // Re-throw the error to be caught by the outer try-catch block
+      throw new Error(`Error inserting: ${e.message}`);
+    } finally {
+      client.release();
+    }
 
     res.json({
       message: `Successfully embedded ${documents.length} appointments`,
