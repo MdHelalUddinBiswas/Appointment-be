@@ -195,29 +195,20 @@ const getAppointments = async (req, res) => {
         title: metadata.title || "Untitled",
         description: metadata.description || "",
         content: row.content,
-        role: row.role, // Include the role (owner or participant)
-
-        // Time information
+        role: row.role, 
         start_time: metadata.start_time,
         end_time: metadata.end_time,
         duration_minutes: metadata.duration_minutes,
         day_of_week: metadata.day_of_week,
         time_of_day: metadata.time_of_day,
         is_past: metadata.is_past || false,
-
-        // Location and status
         location: metadata.location || "",
         status: metadata.status || "unknown",
-
-        // Participants
         participants_count: metadata.participants_count || 0,
-
-        // Additional metadata
+        participants: metadata.participants || [],
         has_description: metadata.has_description || false,
         has_location: metadata.has_location || false,
         is_recurring: metadata.is_recurring || false,
-
-        // Include raw metadata for reference
         raw_metadata: metadata,
       };
     });
@@ -340,7 +331,6 @@ const getAppointmentById = async (req, res) => {
         user_id: metadata.user_id,
         content: embedding.content,
         role: role, // Include the user's role for this appointment
-        raw_metadata: metadata, // Include the full metadata for client-side access
       },
     };
 
