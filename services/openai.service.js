@@ -17,11 +17,11 @@ const model = new ChatOpenAI({
 
 // Helper function to format date
 const formatDate = (date) => {
-  return new Date(date).toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  return new Date(date).toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 };
 
@@ -49,20 +49,27 @@ const createChatChain = (userContext) => {
     {
       context: async (input) => {
         // input can be an object: { message, userId, userEmail }
-        const query = typeof input === 'object' && input.message ? input.message : input;
-        const userId = typeof input === 'object' && input.userId ? input.userId : (userContext?.userId || null);
-        const userEmail = typeof input === 'object' && input.userEmail ? input.userEmail : (userContext?.userEmail || null);
+        const query =
+          typeof input === "object" && input.message ? input.message : input;
+        const userId =
+          typeof input === "object" && input.userId
+            ? input.userId
+            : userContext?.userId || null;
+        const userEmail =
+          typeof input === "object" && input.userEmail
+            ? input.userEmail
+            : userContext?.userEmail || null;
 
         const docs = await pgvectorStore.similaritySearch(query, 10);
         console.log("Search input:", query);
-        console.log("Found documents:", docs.length);
 
         // Filter docs by user_id or participants
-        const filteredDocs = docs.filter(doc => {
+        const filteredDocs = docs.filter((doc) => {
           const isOwner = doc.metadata?.user_id === userId;
-          const isParticipant = Array.isArray(doc.metadata?.participants) &&
+          const isParticipant =
+            Array.isArray(doc.metadata?.participants) &&
             doc.metadata.participants.some(
-              p => (typeof p === "string" ? p : p?.email) === userEmail
+              (p) => (typeof p === "string" ? p : p?.email) === userEmail
             );
           return isOwner || isParticipant;
         });
@@ -73,15 +80,28 @@ const createChatChain = (userContext) => {
               `[Appointment: ${doc.metadata.title || "Untitled"}] ${
                 doc.pageContent
               } - Start: ${doc.metadata.start_time || "Unknown"} - End: ${
-                doc.metadata.end_time || "Unknown"}
+                doc.metadata.end_time || "Unknown"
+              }
               } - Status: ${doc.metadata.status || "Unknown"} - Participants: ${
-                doc.metadata.participants_count || "0"}
+                doc.metadata.participants_count || "0"
+              }
               }
               - participants: ${
                 Array.isArray(doc.metadata?.participants)
-                  ? doc.metadata.participants.map((p) => typeof p === "string" ? p : p?.email).join(", ")
+                  ? doc.metadata.participants
+                      .map((p) =>
+                        typeof p === "string"
+                          ? p
+                          : `${p?.name || "Unknown"} <${
+                              p?.email || "no-email"
+                            }>`
+                      )
+                      .join(", ")
                   : "Unknown"
-              }`
+              }
+              
+              
+              `
           )
           .join("\n");
       },
@@ -109,12 +129,13 @@ const processChat = async (message, userContext = {}) => {
   const userEmail = userContext.userEmail;
 
   // First check if we have any documents for this user (as owner or participant)
-  const docs = await pgvectorStore.similaritySearch(message, 5);
-  const filteredDocs = docs.filter(doc => {
+  const docs = await pgvectorStore.similaritySearch(message, 10);
+  const filteredDocs = docs.filter((doc) => {
     const isOwner = doc.metadata?.user_id === userId;
-    const isParticipant = Array.isArray(doc.metadata?.participants) &&
+    const isParticipant =
+      Array.isArray(doc.metadata?.participants) &&
       doc.metadata.participants.some(
-        p => (typeof p === "string" ? p : p?.email) === userEmail
+        (p) => (typeof p === "string" ? p : p?.email) === userEmail
       );
     return isOwner || isParticipant;
   });
