@@ -102,13 +102,15 @@ const upload = multer({
 // Handle text chat requests
 const handleChatRequest = async (req, res) => {
   try {
+    const userTimezone = req?.body?.userTimezone;
     const { message } = req?.body;
     const userId = req.user?.id;
     const userEmail = req.user?.email;
-
+    console.log(req.body.userTimezone);
     if (!message) {
       return res.status(400).json({ error: "Message is required" });
     }
+    
 
     // Check if vector store is initialized
     const pgvectorStore = getVectorStoreInstance();
@@ -118,7 +120,7 @@ const handleChatRequest = async (req, res) => {
       });
     }
 
-    const result = await processChat(message, { userId, userEmail });
+    const result = await processChat(message, { userId, userEmail, userTimezone });
     
     res.json(result);
   } catch (error) {
@@ -133,6 +135,7 @@ const handleChatRequest = async (req, res) => {
 
 // Handle audio chat requests with improved error handling
 const handleAudioChatRequest = async (req, res) => {
+  const userTimezone = req?.body?.userTimezone;
   console.log('Received audio chat request');
   let audioFilePath = null;
   
@@ -176,7 +179,7 @@ const handleAudioChatRequest = async (req, res) => {
 
     // Process the transcribed text through your existing chat logic
     console.log('Processing transcribed text through chat...');
-    const result = await processChat(transcribedText, { userId, userEmail });
+    const result = await processChat(transcribedText, { userId, userEmail, userTimezone });
     
     // Return both transcription and chat response
     res.json({
