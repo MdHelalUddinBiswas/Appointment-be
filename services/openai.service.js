@@ -16,14 +16,9 @@ const model = new ChatOpenAI({
 });
 
 // Helper function to format date
-const formatDate = (date) => {
-  return new Date(date).toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-};
+const { formatDate } = require("./dateUtils");
+const { formatDateTime } = require("../utils/dateFormatter");
+
 
 // Helper function to check if two dates are the same day
 const isSameDay = (date1, date2) => {
@@ -57,22 +52,24 @@ const getDateFilter = (query) => {
   return null;
 };
 
-// Enhanced prompt template with better date awareness
+// Get user's timezone from context
 const currentUserTimezone = (userContext) => {
-  const userTimezone = userContext?.userTimezone;
-  return userTimezone;
+  return userContext?.userTimezone || 'UTC';
 };
-console.log(currentUserTimezone());
-const template = `You are a helpful assistant for the MeetNing Appointment AI system.
+
+const getPromptTemplate = (userContext = {}) => {
+  const timezone = currentUserTimezone(userContext);
+  return `You are a helpful assistant for the MeetNing Appointment AI system.
 
 **Current Date & Time Information:**
-- Current date: ${formatDate(new Date())}
-- User's timezone: ${currentUserTimezone()}
+- Current date: ${formatDate(new Date(), timezone)}
+- Current date and time: ${formatDateTime(new Date(), timezone)}
+- User's timezone: ${timezone || 'Not specified (using UTC)'}
 
 You have access to the user's personal appointment data below, but you can also use your general knowledge to provide comprehensive answers about appointments, scheduling, time management, and related topics.
 
 **IMPORTANT TIMEZONE HANDLING:**
-- All times should be interpreted and displayed in the user's timezone: ${currentUserTimezone()}
+- All times should be interpreted and displayed in the user's timezone: ${timezone}
 - When showing appointment times, always include the timezone for clarity
 - When answering questions about "today", "tomorrow", or specific time periods, use the user's timezone to determine what constitutes "today" or "tomorrow"
 
@@ -91,13 +88,17 @@ Personal Appointment Context:
 Question: {question}
 
 Answer: `;
+};
 
-const prompt = PromptTemplate.fromTemplate(template);
+const getPrompt = (userContext = {}) => {
+  return PromptTemplate.fromTemplate(getPromptTemplate(userContext));
+};
 const outputParser = new StringOutputParser();
 
 // Create chain for generating responses with proper date filtering
-const createChatChain = (userContext) => {
+const createChatChain = (userContext = {}) => {
   const pgvectorStore = getVectorStoreInstance();
+  const prompt = getPrompt(userContext);
 
   return RunnableSequence.from([
     {
