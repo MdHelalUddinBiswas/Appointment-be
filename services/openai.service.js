@@ -64,6 +64,8 @@ const getPromptTemplate = (userContext = {}) => {
 You have access to the user's personal appointment data below, but you can also use your general knowledge to provide comprehensive answers about appointments, scheduling, time management, and related topics.
 
 **IMPORTANT TIMEZONE HANDLING:**
+- All times should be displayed in the user's timezone: ${timezone}
+- All times should be displayed in start time and end time conversion: ${timezone}
 - When showing appointment times, always include the timezone for clarity
 - When answering questions about "today", "tomorrow", or specific time periods, use the user's timezone to determine what constitutes "today" or "tomorrow"
 
