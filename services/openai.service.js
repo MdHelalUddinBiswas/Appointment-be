@@ -76,6 +76,7 @@ You have access to the user's personal appointment data below, but you can also 
 5. Format your response using GitHub-flavored markdown with headings, lists, and bold text
 6. Always provide the current date/time context when relevant
 7. Be precise about timing and always mention the timezone when displaying times
+8. appointments data is convert to user's timezone: ${timezone}
 
 Personal Appointment Context:
 {context}
