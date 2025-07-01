@@ -15,69 +15,128 @@ const model = new ChatOpenAI({
   temperature: 0.7,
 });
 
-// Helper function to check if two dates are the same day
-const isSameDay = (date1, date2) => {
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-  return (
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
-  );
+// Enhanced timezone conversion helper
+const convertToUserTimezone = (dateString, userTimezone = "GMT") => {
+  if (!dateString) return "Unknown";
+
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid Date";
+
+    // Format with timezone
+    const options = {
+      timeZone: userTimezone,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    };
+
+    const formattedDate = date.toLocaleString("en-US", options);
+    return `${formattedDate} (${userTimezone})`;
+  } catch (error) {
+    console.error("Error converting timezone:", error);
+    return "Time conversion error";
+  }
 };
 
-// Helper function to get date range based on query
-const getDateFilter = (query) => {
+// Helper function to check if two dates are the same day in user's timezone
+const isSameDay = (date1, date2, userTimezone = "GMT") => {
+  try {
+    const d1 = new Date(date1);
+    const d2 = new Date(date2);
+
+    // Convert both dates to user's timezone for comparison
+    const options = { timeZone: userTimezone };
+    const d1Local = new Date(d1.toLocaleString("en-US", options));
+    const d2Local = new Date(d2.toLocaleString("en-US", options));
+
+    return (
+      d1Local.getFullYear() === d2Local.getFullYear() &&
+      d1Local.getMonth() === d2Local.getMonth() &&
+      d1Local.getDate() === d2Local.getDate()
+    );
+  } catch (error) {
+    console.error("Error comparing dates:", error);
+    return false;
+  }
+};
+
+// Enhanced date filter function with timezone awareness
+const getDateFilter = (query, userTimezone = "GMT") => {
   const lowerQuery = query.toLowerCase();
-  const today = new Date();
+
+  // Get current date in user's timezone
+  const now = new Date();
+  const userNow = new Date(
+    now.toLocaleString("en-US", { timeZone: userTimezone })
+  );
+
+  const today = new Date(
+    userNow.getFullYear(),
+    userNow.getMonth(),
+    userNow.getDate()
+  );
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   if (lowerQuery.includes("today")) {
-    return { type: "today", date: today };
+    return { type: "today", date: today, timezone: userTimezone };
   } else if (lowerQuery.includes("tomorrow")) {
-    return { type: "tomorrow", date: tomorrow };
+    return { type: "tomorrow", date: tomorrow, timezone: userTimezone };
   } else if (lowerQuery.includes("this week")) {
     const weekStart = new Date(today);
     weekStart.setDate(today.getDate() - today.getDay());
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
-    return { type: "week", start: weekStart, end: weekEnd };
+    return {
+      type: "week",
+      start: weekStart,
+      end: weekEnd,
+      timezone: userTimezone,
+    };
   }
   return null;
 };
 
-// Get user's timezone from context
-const currentUserTimezone = (userContext) => {
-  return userContext?.userTimezone || "GMT";
+// Get user's timezone from context with fallback
+const getCurrentUserTimezone = (userContext) => {
+  return userContext?.userTimezone || userContext?.timezone || "GMT";
 };
 
+// Enhanced prompt template with better timezone handling
 const getPromptTemplate = (userContext = {}) => {
-  const timezone = currentUserTimezone(userContext);
+  const timezone = getCurrentUserTimezone(userContext);
+  const now = new Date();
+  const userCurrentTime = convertToUserTimezone(now.toISOString(), timezone);
+
   return `You are a helpful assistant for the MeetNing Appointment AI system.
 
 **Current Date & Time Information:**
-- Current date: ${new Date().toLocaleDateString()}
-- Current date and time: ${new Date().toLocaleString()}
-- User's timezone: ${timezone}
+- Your current time: ${userCurrentTime}
+- Your timezone: ${timezone}
 
-You have access to the user's personal appointment data below, but you can also use your general knowledge to provide comprehensive answers about appointments, scheduling, time management, and related topics.
+You have access to the user's personal appointment data below. All appointment times have been converted to the user's timezone (${timezone}) for accurate display.
 
-**IMPORTANT TIMEZONE HANDLING:**
-- All appointments time convert to user's timezone: ${timezone} 
-- All times should be displayed in start time and end time convert to user's timezone: ${timezone} 
-- When showing appointment times, always include the timezone for clarity
-- When answering questions about "today", "tomorrow", or specific time periods, use the user's timezone to determine what constitutes "today" or "tomorrow"
+**CRITICAL TIMEZONE DISPLAY RULES:**
+1. ALWAYS show appointment times in the user's timezone: ${timezone}
+2. ALWAYS include the timezone abbreviation or name in parentheses after each time
+3. Format times as: "MMM DD, YYYY at HH:MM AM/PM (${timezone})"
+4. When comparing times (today, tomorrow, etc.), use the user's timezone context
+5. Never show times without timezone indication
 
 **Response Guidelines:**
-1. If the question is about the user's specific appointments for a particular day/time, filter and show ONLY those appointments
-2. If no appointments match the requested timeframe, clearly state that
-3. If the question needs general advice or information, use your knowledge
-4. If both are relevant, combine personal data with general guidance
-5. Format your response using GitHub-flavored markdown with headings, lists, and bold text
-6. Always provide the current date/time context when relevant
-7. Be precise about timing and always mention the timezone when displaying times
-8. appointments data is convert to user's timezone: ${timezone}
+1. If asking about specific timeframes (today, tomorrow, this week), show ONLY matching appointments
+2. If no appointments match, clearly state "No appointments found for [timeframe]"
+3. Always format appointment times consistently with timezone
+4. Use GitHub-flavored markdown for formatting
+5. Be precise and clear about timing
+
+**Example Time Format:**
+- Start: Jul 1, 2025 at 4:30 AM (${timezone})
+- End: Jul 1, 2025 at 5:30 AM (${timezone})
 
 Personal Appointment Context:
 {context}
@@ -90,17 +149,47 @@ Answer: `;
 const getPrompt = (userContext = {}) => {
   return PromptTemplate.fromTemplate(getPromptTemplate(userContext));
 };
+
 const outputParser = new StringOutputParser();
 
-// Create chain for generating responses with proper date filtering
+// Enhanced context formatter with proper timezone conversion
+const formatAppointmentContext = (doc, userTimezone) => {
+  const startTime = convertToUserTimezone(
+    doc.metadata.start_time,
+    userTimezone
+  );
+  const endTime = convertToUserTimezone(doc.metadata.end_time, userTimezone);
+
+  const participantsList = Array.isArray(doc.metadata?.participants)
+    ? doc.metadata.participants
+        .map((p) =>
+          typeof p === "string"
+            ? p
+            : `${p?.name || "Unknown"} <${p?.email || "no-email"}>`
+        )
+        .join(", ")
+    : "Unknown";
+
+  return `**${doc.metadata.title || "Untitled Appointment"}**
+Description: ${doc.pageContent}
+Start Time: ${startTime}
+End Time: ${endTime}
+Status: ${doc.metadata.status || "Unknown"}
+Participants: ${participantsList} (${
+    doc.metadata.participants_count || "0"
+  } total)
+---`;
+};
+
+// Create enhanced chain with proper timezone handling
 const createChatChain = (userContext = {}) => {
   const pgvectorStore = getVectorStoreInstance();
   const prompt = getPrompt(userContext);
+  const userTimezone = getCurrentUserTimezone(userContext);
 
   return RunnableSequence.from([
     {
       context: async (input) => {
-        // input can be an object: { message, userId, userEmail }
         const query =
           typeof input === "object" && input.message ? input.message : input;
         const userId =
@@ -112,10 +201,10 @@ const createChatChain = (userContext = {}) => {
             ? input.userEmail
             : userContext?.userEmail || null;
 
-        // Try to get relevant appointment data
         try {
           const docs = await pgvectorStore.similaritySearch(query, 10);
           console.log("Search input:", query);
+          console.log("User timezone:", userTimezone);
 
           // Filter docs by user_id or participants
           let filteredDocs = docs.filter((doc) => {
@@ -128,8 +217,8 @@ const createChatChain = (userContext = {}) => {
             return isOwner || isParticipant;
           });
 
-          // Apply date filtering based on query
-          const dateFilter = getDateFilter(query);
+          // Apply date filtering with timezone awareness
+          const dateFilter = getDateFilter(query, userTimezone);
           if (dateFilter) {
             filteredDocs = filteredDocs.filter((doc) => {
               if (!doc.metadata?.start_time) return false;
@@ -138,13 +227,27 @@ const createChatChain = (userContext = {}) => {
 
               switch (dateFilter.type) {
                 case "today":
-                  return isSameDay(appointmentDate, dateFilter.date);
+                  return isSameDay(
+                    appointmentDate,
+                    dateFilter.date,
+                    userTimezone
+                  );
                 case "tomorrow":
-                  return isSameDay(appointmentDate, dateFilter.date);
+                  return isSameDay(
+                    appointmentDate,
+                    dateFilter.date,
+                    userTimezone
+                  );
                 case "week":
+                  // Convert appointment time to user timezone for comparison
+                  const appointmentInUserTZ = new Date(
+                    appointmentDate.toLocaleString("en-US", {
+                      timeZone: userTimezone,
+                    })
+                  );
                   return (
-                    appointmentDate >= dateFilter.start &&
-                    appointmentDate <= dateFilter.end
+                    appointmentInUserTZ >= dateFilter.start &&
+                    appointmentInUserTZ <= dateFilter.end
                   );
                 default:
                   return true;
@@ -161,39 +264,12 @@ const createChatChain = (userContext = {}) => {
 
           if (filteredDocs.length === 0) {
             const timeContext = dateFilter ? ` for ${dateFilter.type}` : "";
-            return `No personal appointment data found${timeContext}.`;
+            return `No personal appointment data found${timeContext} in your timezone (${userTimezone}).`;
           }
 
+          // Format appointments with proper timezone display
           return filteredDocs
-            .map((doc) => {
-              const startTime = doc.metadata.start_time
-                ? new Date(doc.metadata.start_time).toLocaleString()
-                : "Unknown";
-              const endTime = doc.metadata.end_time
-                ? new Date(doc.metadata.end_time).toLocaleString()
-                : "Unknown";
-
-              return `[Appointment: ${doc.metadata.title || "Untitled"}] ${
-                doc.pageContent
-              } - Start: ${startTime} - End: ${endTime} - Status: ${
-                doc.metadata.status || "Unknown"
-              } - Participants: ${doc.metadata.participants_count || "0"}
-                - participants: ${
-                  Array.isArray(doc.metadata?.participants)
-                    ? doc.metadata.participants
-                        .map((p) =>
-                          typeof p === "string"
-                            ? p
-                            : `${p?.name || "Unknown"} <${
-                                p?.email || "no-email"
-                              }>`
-                        )
-                        .join(", ")
-                    : "Unknown"
-                }
-                
-                `;
-            })
+            .map((doc) => formatAppointmentContext(doc, userTimezone))
             .join("\n");
         } catch (error) {
           console.error("Error retrieving appointment data:", error);
@@ -208,22 +284,29 @@ const createChatChain = (userContext = {}) => {
   ]);
 };
 
-// Enhanced function to process chat queries with proper date handling
+// Enhanced chat processing with timezone context
 const processChat = async (message, userContext = {}) => {
   const lowerCaseMessage = message.toLowerCase().trim();
+  const userTimezone = getCurrentUserTimezone(userContext);
 
-  // Handle greetings
+  // Handle greetings with timezone awareness
   const greetings = ["hi", "hello", "hey"];
   if (greetings.includes(lowerCaseMessage)) {
+    const currentTime = convertToUserTimezone(
+      new Date().toISOString(),
+      userTimezone
+    );
     return {
-      response:
-        "Hello! I can help you with your personal appointments and provide general advice about scheduling and time management. How can I assist you today?",
+      response: `Hello! I can help you with your personal appointments and provide general advice about scheduling and time management. 
+
+Your current time is: ${currentTime}
+
+How can I assist you today?`,
       hasDocuments: true,
     };
   }
-  const userTimezone = currentUserTimezone(userContext);
 
-  // Always create and use the chain - it will handle both personal data and general knowledge
+  // Create and use the chain
   const chain = createChatChain(userContext);
 
   try {
@@ -243,7 +326,7 @@ const processChat = async (message, userContext = {}) => {
   }
 };
 
-// Enhanced function to determine query type with better date detection
+// Enhanced query categorization
 const categorizeQuery = (message) => {
   const appointmentKeywords = [
     "appointment",
@@ -260,6 +343,11 @@ const categorizeQuery = (message) => {
     "my appointments",
     "my meetings",
     "my schedule",
+    "what's next",
+    "upcoming",
+    "when is",
+    "time",
+    "when do I have",
   ];
 
   const dateKeywords = [
@@ -275,6 +363,12 @@ const categorizeQuery = (message) => {
     "friday",
     "saturday",
     "sunday",
+    "morning",
+    "afternoon",
+    "evening",
+    "tonight",
+    "later",
+    "soon",
   ];
 
   const generalKeywords = [
@@ -286,6 +380,8 @@ const categorizeQuery = (message) => {
     "recommend",
     "suggest",
     "help me understand",
+    "explain",
+    "tell me about",
   ];
 
   const lowerMessage = message.toLowerCase();
@@ -293,11 +389,9 @@ const categorizeQuery = (message) => {
   const hasAppointmentKeywords = appointmentKeywords.some((keyword) =>
     lowerMessage.includes(keyword)
   );
-
   const hasDateKeywords = dateKeywords.some((keyword) =>
     lowerMessage.includes(keyword)
   );
-
   const hasGeneralKeywords = generalKeywords.some((keyword) =>
     lowerMessage.includes(keyword)
   );
@@ -314,4 +408,6 @@ const categorizeQuery = (message) => {
 module.exports = {
   processChat,
   categorizeQuery,
+  convertToUserTimezone,
+  getCurrentUserTimezone,
 };
